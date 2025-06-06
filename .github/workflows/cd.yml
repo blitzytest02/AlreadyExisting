@@ -1,0 +1,335 @@
+# Continuous Deployment (CD) Workflow for Node.js Tutorial Application
+# This workflow automates the complete deployment pipeline including Docker image building,
+# container registry publishing, and Kubernetes cluster deployment
+# 
+# Workflow is triggered after successful CI completion on the main branch
+# Architecture: Multi-stage deployment with build-and-push followed by deploy stages
+# Target Platform: Google Kubernetes Engine (GKE) with GitHub Container Registry
+# Security: Uses OpenID Connect (OIDC) for secure cloud authentication
+
+name: Node.js CD
+
+# Workflow triggers
+on:
+  push:
+    branches: [ main ]
+  # Allow manual workflow dispatch for emergency deployments
+  workflow_dispatch:
+
+# Define environment variables for consistent usage across jobs
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: nodejs-tutorial-app-backend
+
+# Global permissions for the workflow
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+
+jobs:
+  # Job 1: Build and push Docker image to GitHub Container Registry
+  build-and-push:
+    name: Build and Push Container Image
+    runs-on: ubuntu-latest
+    
+    # Specific permissions for this job
+    permissions:
+      contents: read      # Required to checkout repository code
+      packages: write     # Required to push to GitHub Container Registry
+      id-token: write     # Required for OIDC authentication
+    
+    # Job outputs for downstream jobs
+    outputs:
+      image: ${{ steps.build_and_push.outputs.digest }}
+      image-tag: ${{ env.REGISTRY }}/${{ github.repository }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+    
+    steps:
+      # Step 1: Checkout repository source code
+      # Uses actions/checkout@v4 for repository access
+      - name: Check out repository code
+        uses: actions/checkout@v4
+        with:
+          # Ensure we get the full history for proper Git operations
+          fetch-depth: 0
+      
+      # Step 2: Set up Docker Buildx for advanced build features
+      # Enables multi-platform builds and improved caching
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          # Use default buildx instance with performance optimizations
+          install: true
+          driver-opts: |
+            network=host
+      
+      # Step 3: Authenticate with GitHub Container Registry
+      # Uses docker/login-action@v3 for secure registry access
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      
+      # Step 4: Extract metadata for Docker image tagging
+      # Generates tags and labels following best practices
+      - name: Extract metadata for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+          labels: |
+            org.opencontainers.image.title=Node.js Tutorial Application Backend
+            org.opencontainers.image.description=Educational Node.js application with Express.js 5.1.0
+            org.opencontainers.image.vendor=Tutorial Project
+            org.opencontainers.image.version=${{ github.sha }}
+      
+      # Step 5: Build and push Docker image
+      # Uses docker/build-push-action@v5 with multi-stage Dockerfile
+      - name: Build and push Docker image
+        id: build_and_push
+        uses: docker/build-push-action@v5
+        with:
+          # Build context points to repository root
+          context: .
+          # Use the multi-stage Dockerfile from infrastructure/docker/
+          file: infrastructure/docker/Dockerfile
+          # Build for multiple platforms for better compatibility
+          platforms: linux/amd64,linux/arm64
+          # Push to registry after successful build
+          push: true
+          # Use metadata-generated tags and labels
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # Build arguments for customization
+          build-args: |
+            NODE_ENV=production
+            PORT=3000
+          # Enable build caching for faster builds
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          # Provenance and SBOM generation for supply chain security
+          provenance: true
+          sbom: true
+      
+      # Step 6: Generate build summary
+      # Provides deployment information for monitoring and debugging
+      - name: Generate build summary
+        run: |
+          echo "## Container Build Summary 🐳" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Image Digest:** \`${{ steps.build_and_push.outputs.digest }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Image Tags:**" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "${{ steps.meta.outputs.tags }}" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "**Build Timestamp:** $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "**Git Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+
+  # Job 2: Deploy to Kubernetes cluster
+  deploy:
+    name: Deploy to Kubernetes
+    runs-on: ubuntu-latest
+    
+    # Dependency on successful build-and-push job
+    needs: build-and-push
+    
+    # Specific permissions for deployment job
+    permissions:
+      contents: read      # Required to checkout repository code
+      id-token: write     # Required for OIDC authentication with GCP
+    
+    # Deployment environment configuration
+    environment:
+      name: production
+      url: https://nodejs-tutorial-app.example.com
+    
+    steps:
+      # Step 1: Checkout repository for deployment scripts
+      - name: Check out repository code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1  # Shallow clone for deployment scripts only
+      
+      # Step 2: Authenticate to Google Cloud Platform
+      # Uses google-github-actions/auth@v2 with Workload Identity Federation
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          # Workload Identity Provider for secure authentication without service account keys
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+          # Token lifetime for deployment operations
+          token_format: 'access_token'
+          access_token_lifetime: '3600s'
+      
+      # Step 3: Configure GKE cluster credentials
+      # Uses google-github-actions/setup-gke-cluster@v2 for kubectl configuration
+      - name: Set up GKE cluster credentials
+        uses: google-github-actions/setup-gke-cluster@v2
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          location: ${{ secrets.GKE_CLUSTER_LOCATION }}
+          cluster_name: ${{ secrets.GKE_CLUSTER_NAME }}
+          # Use the authentication from previous step
+          use_auth_provider: true
+      
+      # Step 4: Verify cluster connectivity
+      # Ensures kubectl is properly configured before deployment
+      - name: Verify cluster connectivity
+        run: |
+          echo "Verifying Kubernetes cluster connectivity..."
+          kubectl cluster-info
+          kubectl get nodes
+          echo "Cluster connectivity verified successfully"
+      
+      # Step 5: Validate deployment prerequisites
+      # Checks namespace and deployment existence before proceeding
+      - name: Validate deployment prerequisites
+        run: |
+          echo "Validating deployment prerequisites..."
+          
+          # Check if namespace exists
+          if ! kubectl get namespace ${{ env.KUBE_NAMESPACE }} > /dev/null 2>&1; then
+            echo "Creating namespace: ${{ env.KUBE_NAMESPACE }}"
+            kubectl create namespace ${{ env.KUBE_NAMESPACE }}
+          else
+            echo "Namespace ${{ env.KUBE_NAMESPACE }} already exists"
+          fi
+          
+          # Check if deployment exists
+          if kubectl get deployment ${{ env.DEPLOYMENT_NAME }} -n ${{ env.KUBE_NAMESPACE }} > /dev/null 2>&1; then
+            echo "Deployment ${{ env.DEPLOYMENT_NAME }} exists - will update"
+          else
+            echo "Warning: Deployment ${{ env.DEPLOYMENT_NAME }} does not exist"
+            echo "This script expects an existing deployment to update"
+          fi
+        env:
+          KUBE_NAMESPACE: default
+          DEPLOYMENT_NAME: nodejs-tutorial-app-deployment
+      
+      # Step 6: Execute Kubernetes deployment
+      # Runs the comprehensive deployment script with proper environment configuration
+      - name: Deploy to Kubernetes
+        run: |
+          # Make deployment script executable
+          chmod +x ./infrastructure/scripts/deploy.sh
+          
+          # Execute deployment with comprehensive logging
+          echo "Starting Kubernetes deployment process..."
+          ./infrastructure/scripts/deploy.sh
+        env:
+          # Container image with full registry path and commit-based tag
+          IMAGE_NAME: ${{ needs.build-and-push.outputs.image-tag }}
+          # Kubernetes deployment configuration
+          KUBE_NAMESPACE: default
+          DEPLOYMENT_NAME: nodejs-tutorial-app-deployment
+          # Deployment timeout configuration (10 minutes)
+          ROLLOUT_TIMEOUT: 600
+          # Additional deployment environment variables
+          NODE_ENV: production
+          PORT: "3000"
+      
+      # Step 7: Post-deployment validation
+      # Verifies application health and accessibility after deployment
+      - name: Post-deployment validation
+        run: |
+          echo "Running post-deployment validation..."
+          
+          # Wait for pods to be fully ready
+          echo "Waiting for pods to be ready..."
+          kubectl wait --for=condition=ready pod \
+            -l app=nodejs-tutorial-app \
+            -n ${{ env.KUBE_NAMESPACE }} \
+            --timeout=300s
+          
+          # Get service endpoint for health check
+          SERVICE_IP=$(kubectl get service nodejs-tutorial-app-service \
+            -n ${{ env.KUBE_NAMESPACE }} \
+            -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || \
+            kubectl get service nodejs-tutorial-app-service \
+            -n ${{ env.KUBE_NAMESPACE }} \
+            -o jsonpath='{.spec.clusterIP}')
+          
+          if [ -n "$SERVICE_IP" ]; then
+            echo "Service IP: $SERVICE_IP"
+            
+            # Health check with retry logic
+            for i in {1..5}; do
+              if curl -f -s "http://$SERVICE_IP:3000/hello" > /dev/null; then
+                echo "Health check passed on attempt $i"
+                curl -s "http://$SERVICE_IP:3000/hello"
+                break
+              else
+                echo "Health check failed on attempt $i, retrying in 10 seconds..."
+                sleep 10
+              fi
+              
+              if [ $i -eq 5 ]; then
+                echo "Health check failed after 5 attempts"
+                exit 1
+              fi
+            done
+          else
+            echo "Could not determine service IP, skipping health check"
+          fi
+          
+          echo "Post-deployment validation completed successfully"
+        env:
+          KUBE_NAMESPACE: default
+      
+      # Step 8: Generate deployment summary
+      # Creates comprehensive deployment report for monitoring and audit purposes
+      - name: Generate deployment summary
+        run: |
+          echo "## Deployment Summary 🚀" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Deployment Status:** ✅ Success" >> $GITHUB_STEP_SUMMARY
+          echo "**Image Deployed:** \`${{ needs.build-and-push.outputs.image-tag }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Namespace:** \`${{ env.KUBE_NAMESPACE }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Deployment Name:** \`${{ env.DEPLOYMENT_NAME }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Deployment Timestamp:** $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Add pod status information
+          echo "**Pod Status:**" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          kubectl get pods -l app=nodejs-tutorial-app -n ${{ env.KUBE_NAMESPACE }} >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          
+          # Add service information
+          echo "**Service Information:**" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          kubectl get services -l app=nodejs-tutorial-app -n ${{ env.KUBE_NAMESPACE }} >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+        env:
+          KUBE_NAMESPACE: default
+          DEPLOYMENT_NAME: nodejs-tutorial-app-deployment
+      
+      # Step 9: Notify deployment completion (Optional)
+      # Can be extended to send notifications to monitoring systems
+      - name: Deployment notification
+        if: always()
+        run: |
+          if [ "${{ job.status }}" == "success" ]; then
+            echo "✅ Deployment completed successfully"
+            echo "Application is now available at the configured endpoint"
+          else
+            echo "❌ Deployment failed"
+            echo "Please check the workflow logs for detailed error information"
+          fi
+          
+          # Log deployment metrics for monitoring
+          echo "Deployment metrics:"
+          echo "- Workflow: ${{ github.workflow }}"
+          echo "- Run ID: ${{ github.run_id }}"
+          echo "- Commit: ${{ github.sha }}"
+          echo "- Actor: ${{ github.actor }}"
+          echo "- Event: ${{ github.event_name }}"
