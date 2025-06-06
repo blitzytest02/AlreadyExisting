@@ -1,0 +1,347 @@
+# Kubernetes Deployment manifest for the Node.js Tutorial Application
+# This Deployment manages the lifecycle of containerized Node.js Express application pods
+# ensuring high availability, automated scaling, and seamless updates/rollbacks
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  # Deployment name following Kubernetes naming conventions
+  # Used for resource identification and management operations
+  name: nodejs-tutorial-app-deployment
+  
+  # Labels for the Deployment resource itself, enabling resource organization and management
+  # These labels follow Kubernetes best practices and support GitOps workflows
+  labels:
+    app: nodejs-tutorial-app
+    version: v1.0.0
+    component: backend
+    part-of: nodejs-tutorial-system
+    managed-by: kubernetes
+    
+  # Annotations providing detailed metadata and configuration documentation
+  annotations:
+    # Deployment documentation and educational context
+    description: "Kubernetes Deployment for Node.js v22.16.0 LTS tutorial application with Express.js 5.1.0"
+    tutorial.example.com/purpose: "Educational containerized web server deployment"
+    tutorial.example.com/framework: "Express.js 5.1.0"
+    tutorial.example.com/runtime: "Node.js v22.16.0 LTS"
+    tutorial.example.com/endpoint: "/hello"
+    tutorial.example.com/response: "Hello world"
+    
+    # Deployment strategy and rollback configuration
+    deployment.kubernetes.io/revision-history-limit: "10"
+    deployment.kubernetes.io/max-unavailable: "25%"
+    deployment.kubernetes.io/max-surge: "25%"
+    
+    # Technical specifications cross-references
+    spec.reference.com/containerization: "TECHNICAL_SPECIFICATIONS.md/3.6.5"
+    spec.reference.com/scalability: "TECHNICAL_SPECIFICATIONS.md/2.4.3"
+    spec.reference.com/deployment-strategy: "TECHNICAL_SPECIFICATIONS.md/3.6.4"
+    spec.reference.com/http-server: "TECHNICAL_SPECIFICATIONS.md/2.1.1/F-001"
+
+spec:
+  # Number of pod replicas to maintain
+  # Supports horizontal scaling for high availability and load distribution
+  # Can be dynamically adjusted for traffic demands (Scalability Considerations - 2.4.3)
+  replicas: 1
+  
+  # Label selector for identifying pods managed by this deployment
+  # Must match the labels in the pod template for proper pod lifecycle management
+  selector:
+    matchLabels:
+      app: nodejs-tutorial-app
+  
+  # Deployment strategy configuration for updates and rollbacks
+  # RollingUpdate ensures zero-downtime deployments (Deployment Strategy - 3.6.4)
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # Maximum number of pods that can be unavailable during update
+      maxUnavailable: 25%
+      # Maximum number of pods that can be created above desired replica count
+      maxSurge: 25%
+  
+  # Revision history limit for rollback capability
+  # Maintains deployment history for rollback operations
+  revisionHistoryLimit: 10
+  
+  # Progress deadline for deployment completion
+  # Deployment fails if not completed within this timeframe
+  progressDeadlineSeconds: 600
+  
+  # Pod template specification defining the desired pod configuration
+  template:
+    metadata:
+      # Pod labels that must match the deployment selector
+      # These labels enable service discovery and traffic routing from the Service
+      labels:
+        app: nodejs-tutorial-app
+        version: v1.0.0
+        component: backend
+        
+      # Pod annotations providing runtime configuration and metadata
+      annotations:
+        # Container configuration documentation
+        container.tutorial.com/image: "nodejs-tutorial-app-backend:latest"
+        container.tutorial.com/port: "3000"
+        container.tutorial.com/health-check: "/hello"
+        
+        # Prometheus monitoring annotations (future consideration)
+        prometheus.io/scrape: "false"
+        prometheus.io/port: "3000"
+        prometheus.io/path: "/metrics"
+        
+        # Educational annotations explaining pod functionality
+        tutorial.example.com/container-purpose: "Runs Node.js Express server with /hello endpoint"
+        tutorial.example.com/scaling-target: "Horizontal scaling via replica adjustment"
+    
+    spec:
+      # Container specifications defining the application runtime environment
+      containers:
+      - name: nodejs-tutorial-app-backend
+        
+        # Container image built from infrastructure/docker/Dockerfile
+        # Uses multi-stage build with node:22-alpine for optimal size and security
+        image: nodejs-tutorial-app-backend:latest
+        
+        # Image pull policy for development and production flexibility
+        # IfNotPresent allows local development with pre-built images
+        imagePullPolicy: IfNotPresent
+        
+        # Container port configuration exposing the Express.js server
+        # Port 3000 is the standard port configured in the Node.js application
+        ports:
+        - name: http
+          containerPort: 3000
+          protocol: TCP
+        
+        # Environment variables for application configuration
+        # Supports runtime configuration and deployment flexibility
+        env:
+        - name: NODE_ENV
+          value: "production"
+        - name: PORT
+          value: "3000"
+        - name: DEPLOYMENT_ENVIRONMENT
+          value: "kubernetes"
+        
+        # Resource requests and limits for optimal pod scheduling and resource management
+        # Ensures predictable performance and prevents resource starvation
+        resources:
+          requests:
+            # Minimum guaranteed CPU allocation (0.1 CPU cores)
+            cpu: "100m"
+            # Minimum guaranteed memory allocation
+            memory: "128Mi"
+          limits:
+            # Maximum CPU usage allowed (0.5 CPU cores)
+            cpu: "500m"
+            # Maximum memory usage allowed
+            memory: "256Mi"
+        
+        # Liveness probe to detect if the application is running and responsive
+        # Kubernetes restarts the pod if the liveness probe fails repeatedly
+        livenessProbe:
+          httpGet:
+            # Health check endpoint matching the tutorial application
+            path: /hello
+            port: 3000
+            scheme: HTTP
+          # Initial delay before starting health checks
+          initialDelaySeconds: 30
+          # Interval between health check attempts
+          periodSeconds: 10
+          # Request timeout for health checks
+          timeoutSeconds: 5
+          # Number of consecutive failures before restart
+          failureThreshold: 3
+          # Number of consecutive successes to mark as healthy
+          successThreshold: 1
+        
+        # Readiness probe to determine if the pod is ready to receive traffic
+        # Service only routes traffic to pods that pass readiness checks
+        readinessProbe:
+          httpGet:
+            # Same endpoint used for readiness verification
+            path: /hello
+            port: 3000
+            scheme: HTTP
+          # Shorter initial delay for faster startup detection
+          initialDelaySeconds: 5
+          # More frequent readiness checks
+          periodSeconds: 5
+          # Shorter timeout for readiness checks
+          timeoutSeconds: 3
+          # Fewer failures allowed before marking as not ready
+          failureThreshold: 2
+          # Single success marks pod as ready
+          successThreshold: 1
+        
+        # Startup probe for applications with longer initialization times
+        # Provides additional startup time before liveness/readiness probes begin
+        startupProbe:
+          httpGet:
+            path: /hello
+            port: 3000
+            scheme: HTTP
+          # Longer initial delay for startup
+          initialDelaySeconds: 10
+          # Check every 5 seconds during startup
+          periodSeconds: 5
+          # Allow up to 30 failures (150 seconds total startup time)
+          failureThreshold: 30
+          # Single success indicates successful startup
+          successThreshold: 1
+        
+        # Security context for container-level security configuration
+        # Implements security best practices for containerized applications
+        securityContext:
+          # Run container as non-root user for enhanced security
+          runAsNonRoot: true
+          # Use the nodejs user created in the Dockerfile (UID 1001)
+          runAsUser: 1001
+          runAsGroup: 1001
+          # Prevent privilege escalation
+          allowPrivilegeEscalation: false
+          # Drop all Linux capabilities for minimal privilege
+          capabilities:
+            drop:
+            - ALL
+          # Read-only root filesystem for additional security
+          readOnlyRootFilesystem: true
+        
+        # Volume mounts for temporary storage and configuration
+        volumeMounts:
+        # Temporary directory for application runtime files
+        - name: tmp-volume
+          mountPath: /tmp
+        # npm cache directory for package manager operations
+        - name: npm-cache
+          mountPath: /home/nodejs/.npm
+      
+      # Pod-level security context applying to all containers
+      securityContext:
+        # Run pod as non-root user
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        # Set filesystem group ownership
+        fsGroup: 1001
+      
+      # Volume definitions for temporary storage and caching
+      volumes:
+      # Temporary volume for runtime files
+      - name: tmp-volume
+        emptyDir: {}
+      # npm cache volume for package operations
+      - name: npm-cache
+        emptyDir: {}
+      
+      # Restart policy for pod lifecycle management
+      restartPolicy: Always
+      
+      # DNS policy for service discovery within the cluster
+      dnsPolicy: ClusterFirst
+      
+      # Termination grace period for graceful shutdown
+      terminationGracePeriodSeconds: 30
+      
+      # Node affinity and anti-affinity rules (future scaling consideration)
+      affinity:
+        # Pod anti-affinity to distribute replicas across nodes
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - nodejs-tutorial-app
+              topologyKey: kubernetes.io/hostname
+
+# =============================================================================
+# Deployment Status (read-only, managed by Kubernetes)
+# =============================================================================
+# status:
+#   replicas: 1
+#   updatedReplicas: 1
+#   readyReplicas: 1
+#   availableReplicas: 1
+#   observedGeneration: 1
+#   conditions:
+#   - type: Progressing
+#     status: "True"
+#     reason: NewReplicaSetAvailable
+#   - type: Available
+#     status: "True"
+
+---
+# Documentation and Management Notes
+# This section provides comprehensive guidance for deployment operations
+
+# Deployment Overview:
+# - Manages Node.js v22.16.0 LTS tutorial application with Express.js 5.1.0
+# - Implements containerization strategy (Technical Spec 3.6.5)
+# - Supports horizontal scaling via replica adjustment (Technical Spec 2.4.3)
+# - Enables production-grade deployment with Kubernetes (Technical Spec 3.6.4)
+# - Ensures HTTP server initialization and maintenance (Feature F-001)
+
+# Service Integration:
+# - Pod labels match Service selector (app: nodejs-tutorial-app)
+# - Container port 3000 matches Service targetPort configuration
+# - LoadBalancer Service provides external access to deployment pods
+# - Health checks ensure only ready pods receive traffic
+
+# Container Image Dependency:
+# - Uses image built from infrastructure/docker/Dockerfile
+# - Multi-stage build with node:22-alpine base for security and size
+# - Non-root user execution aligns with security context configuration
+# - Health check endpoint (/hello) matches application implementation
+
+# Scaling Operations:
+# kubectl scale deployment nodejs-tutorial-app-deployment --replicas=3
+# kubectl autoscale deployment nodejs-tutorial-app-deployment --min=1 --max=10 --cpu-percent=70
+
+# Update Operations:
+# kubectl set image deployment/nodejs-tutorial-app-deployment nodejs-tutorial-app-backend=nodejs-tutorial-app-backend:v2.0.0
+# kubectl rollout status deployment/nodejs-tutorial-app-deployment
+# kubectl rollout undo deployment/nodejs-tutorial-app-deployment
+
+# Monitoring Commands:
+# kubectl get deployment nodejs-tutorial-app-deployment
+# kubectl describe deployment nodejs-tutorial-app-deployment
+# kubectl logs -l app=nodejs-tutorial-app --tail=100 -f
+# kubectl top pods -l app=nodejs-tutorial-app
+
+# Troubleshooting:
+# kubectl get pods -l app=nodejs-tutorial-app
+# kubectl describe pod <pod-name>
+# kubectl logs <pod-name> nodejs-tutorial-app-backend
+# kubectl exec -it <pod-name> -- /bin/sh
+
+# Health Check Verification:
+# kubectl port-forward deployment/nodejs-tutorial-app-deployment 3000:3000
+# curl http://localhost:3000/hello
+
+# Performance Considerations:
+# - Resource requests ensure predictable scheduling
+# - Resource limits prevent resource exhaustion
+# - Health probes enable automatic recovery
+# - Rolling update strategy maintains availability during deployments
+# - Pod anti-affinity improves resilience across nodes
+
+# Security Features:
+# - Non-root user execution (UID 1001)
+# - Read-only root filesystem
+# - Dropped Linux capabilities
+# - Security contexts at pod and container levels
+# - Image pull policy prevents unauthorized image usage
+
+# Educational Value:
+# - Demonstrates Kubernetes deployment best practices
+# - Shows integration between Dockerfile, Deployment, and Service
+# - Illustrates horizontal scaling concepts
+# - Provides production-ready configuration patterns
+# - Enables hands-on experience with container orchestration
