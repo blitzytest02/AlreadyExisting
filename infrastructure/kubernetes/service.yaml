@@ -1,0 +1,124 @@
+# Kubernetes Service manifest for the Node.js Tutorial Application
+# This Service exposes the containerized Node.js Express application to external network traffic
+# using a LoadBalancer type, which creates a cloud provider load balancer for external access
+
+apiVersion: v1
+kind: Service
+metadata:
+  # Service name that will be used for DNS resolution within the cluster
+  name: nodejs-tutorial-app-service
+  
+  # Labels for the Service resource itself, enabling identification and management
+  # These labels follow Kubernetes best practices for resource organization
+  labels:
+    app: nodejs-tutorial-app
+    version: v1.0.0
+    component: web-service
+    part-of: nodejs-tutorial-system
+    managed-by: kubernetes
+  
+  # Annotations providing additional metadata and configuration hints
+  annotations:
+    # Documentation for the service purpose and educational context
+    description: "Service exposing Node.js tutorial application with Express.js 5.1.0 framework"
+    tutorial.example.com/purpose: "Educational HTTP server demonstration"
+    tutorial.example.com/endpoint: "/hello"
+    tutorial.example.com/response: "Hello world"
+    
+    # Service configuration annotations
+    service.beta.kubernetes.io/external-traffic: "OnlyLocal"
+    
+    # Educational annotations explaining the service configuration
+    tutorial.example.com/port-mapping: "External port 80 -> Internal port 3000"
+    tutorial.example.com/load-balancer: "Cloud provider managed load balancer"
+
+spec:
+  # Service type: LoadBalancer creates an external load balancer in supported cloud environments
+  # This enables external access to the application from outside the Kubernetes cluster
+  # The load balancer distributes traffic across all healthy pod replicas
+  type: LoadBalancer
+  
+  # Selector determines which pods this service will route traffic to
+  # Pods must have matching labels to receive traffic from this service
+  # This selector targets pods created by the nodejs-tutorial-app Deployment
+  selector:
+    app: nodejs-tutorial-app
+  
+  # Port configuration defining how traffic flows through the service
+  ports:
+    # Primary HTTP port for web traffic
+    - name: http
+      # Protocol for the service port (TCP is default for HTTP traffic)
+      protocol: TCP
+      # External port exposed by the LoadBalancer (standard HTTP port)
+      port: 80
+      # Internal port on the pods where the Node.js application listens
+      # The Express.js server is configured to listen on port 3000
+      targetPort: 3000
+      # Optional: nodePort can be specified for NodePort services
+      # For LoadBalancer type, this is typically auto-assigned
+  
+  # Session affinity configuration (optional)
+  # Default is "None" which allows requests to be distributed to any healthy pod
+  # "ClientIP" would route requests from the same client to the same pod
+  sessionAffinity: None
+  
+  # External traffic policy controls how external traffic is routed
+  # "Cluster" (default) allows traffic to be routed to any node
+  # "Local" preserves client IP but may cause uneven traffic distribution
+  externalTrafficPolicy: Cluster
+  
+  # IP families configuration for dual-stack support (IPv4/IPv6)
+  ipFamilyPolicy: SingleStack
+  ipFamilies:
+    - IPv4
+
+# Service Status (read-only, managed by Kubernetes)
+# When the LoadBalancer is provisioned, status will include:
+# status:
+#   loadBalancer:
+#     ingress:
+#       - ip: <external-ip-address>
+#         hostname: <optional-hostname>
+
+---
+# Optional: Additional metadata and documentation
+# This section serves as embedded documentation for educational purposes
+
+# Service Overview:
+# - Exposes the Node.js tutorial application to external traffic
+# - Uses LoadBalancer type for cloud provider integration
+# - Maps external port 80 to internal application port 3000
+# - Supports the single "/hello" endpoint returning "Hello world"
+# - Enables horizontal scaling by distributing traffic across pod replicas
+
+# Architecture Integration:
+# - Part of the containerization strategy (Technical Spec 3.6.5)
+# - Supports scalability requirements (Technical Spec 2.4.3) 
+# - Core component of deployment strategy (Technical Spec 3.6.4)
+# - Enables external access to HTTP server (Feature F-001)
+
+# Expected Behavior:
+# 1. Cloud provider creates external load balancer
+# 2. External IP/hostname assigned to the service
+# 3. Traffic to external IP:80 routes to pods on port 3000
+# 4. HTTP GET requests to /hello return "Hello world" response
+# 5. Service provides stable endpoint for client applications
+
+# Monitoring and Troubleshooting:
+# - Check service status: kubectl get service nodejs-tutorial-app-service
+# - View service details: kubectl describe service nodejs-tutorial-app-service
+# - Test connectivity: curl http://<external-ip>/hello
+# - Verify pod selection: kubectl get endpoints nodejs-tutorial-app-service
+
+# Security Considerations:
+# - Service exposes application publicly via LoadBalancer
+# - No authentication required (tutorial scope)
+# - Consider network policies for production deployments
+# - Monitor for DDoS attacks on exposed endpoint
+
+# Performance Characteristics:
+# - LoadBalancer distributes traffic for high availability
+# - Supports multiple pod replicas for horizontal scaling
+# - Target response time: < 100ms (per Technical Specifications)
+# - Automatic health checking routes traffic only to healthy pods
