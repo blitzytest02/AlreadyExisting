@@ -1,0 +1,310 @@
+# =============================================================================
+# Docker Compose Configuration for Node.js Tutorial Application
+# =============================================================================
+# Version: 3.8 - Supports Docker Engine 19.03.0+
+# Purpose: Orchestrates the Node.js tutorial application container environment
+# Architecture: Single-service setup with custom networking for local development
+# Compatibility: Node.js v22.16.0 LTS, Express.js 5.1.0
+# =============================================================================
+
+version: '3.8'
+
+# =============================================================================
+# SERVICES CONFIGURATION
+# =============================================================================
+services:
+  # ---------------------------------------------------------------------------
+  # Backend Service: Node.js Tutorial Application
+  # ---------------------------------------------------------------------------
+  backend:
+    # Service description for documentation and orchestration clarity
+    # Defines the main Node.js application service for tutorial purposes
+    container_name: nodejs-tutorial-app-backend
+    
+    # Build configuration using multi-stage Dockerfile
+    # Context set to project root to access src/backend directory
+    # Dockerfile path relative to build context
+    build:
+      context: ../..                                    # Project root directory
+      dockerfile: ./infrastructure/docker/Dockerfile    # Multi-stage Dockerfile path
+      args:
+        # Build-time arguments passed to Dockerfile
+        NODE_ENV: development                           # Development mode for tutorial
+        PORT: 3000                                     # Application port configuration
+    
+    # Image tagging for container identification and versioning
+    # Tagged as latest for development, production should use semantic versioning
+    image: nodejs-tutorial-app-backend:latest
+    
+    # Port mapping configuration (F-001-RQ-003: Port configuration)
+    # Maps host port 3000 to container port 3000 for HTTP access
+    # Format: "host_port:container_port"
+    ports:
+      - "3000:3000"
+    
+    # Environment variables for runtime configuration
+    # Overrides default values for development environment
+    environment:
+      # Express.js environment mode for development optimizations
+      - NODE_ENV=development
+      
+      # Application port inside container (matches Dockerfile default)
+      - PORT=3000
+      
+      # Host binding for container networking (0.0.0.0 for external access)
+      - HOST=0.0.0.0
+      
+      # Application identification for logging and monitoring
+      - APP_NAME=nodejs-tutorial-hello-world
+      - APP_VERSION=1.0.0
+      
+      # Logging configuration for development debugging
+      - LOG_LEVEL=info
+      - ENABLE_REQUEST_LOGGING=true
+      - ENABLE_DETAILED_ERRORS=true
+      
+      # Development tools configuration
+      - ENABLE_HOT_RELOAD=true
+      - DEBUG=app:*
+      - DEV_MODE=true
+      
+      # Performance and monitoring settings
+      - REQUEST_TIMEOUT=30000
+      - ENABLE_PERFORMANCE_MONITORING=true
+      - MEMORY_ALERT_THRESHOLD=52428800
+      
+      # Security configuration for development
+      - TRUST_PROXY=false
+      - CORS_ORIGIN=http://localhost:3000
+      - ENABLE_HELMET=true
+      
+      # Feature flags for tutorial functionality
+      - FEATURE_HELLO_ENDPOINT=true
+      - FEATURE_HEALTH_CHECK=true
+      - FEATURE_REQUEST_LOGGING=true
+      - FEATURE_ERROR_HANDLING=true
+    
+    # Volume mounts for live development and file watching
+    # Enables real-time code changes without container rebuild
+    volumes:
+      # Mount source code directory for development hot-reload
+      # Maps local src/backend to container working directory
+      - ../../src/backend:/usr/src/app
+      
+      # Cache node_modules to prevent host/container conflicts
+      # Anonymous volume for node_modules improves performance
+      - /usr/src/app/node_modules
+      
+      # Mount package.json and package-lock.json for dependency management
+      - ../../src/backend/package.json:/usr/src/app/package.json:ro
+      - ../../src/backend/package-lock.json:/usr/src/app/package-lock.json:ro
+    
+    # Development command override for auto-restart functionality
+    # Uses npm run dev instead of npm start for file watching with nodemon
+    command: ["npm", "run", "dev"]
+    
+    # Alternative environment file configuration (commented for explicit env vars above)
+    # Uncomment to use .env file instead of explicit environment variables
+    # env_file:
+    #   - ../../src/backend/.env
+    
+    # Restart policy for development reliability
+    # unless-stopped ensures container restarts after system reboot
+    restart: unless-stopped
+    
+    # Health check configuration for container monitoring
+    # Monitors the /hello endpoint to ensure application health
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/hello", "||", "exit", "1"]
+      interval: 30s                    # Check every 30 seconds
+      timeout: 10s                     # Timeout after 10 seconds
+      retries: 3                       # Retry 3 times before marking unhealthy
+      start_period: 10s                # Wait 10 seconds before first check
+    
+    # Network configuration for service communication
+    # Connects to custom bridge network for isolated networking
+    networks:
+      - app-network
+    
+    # Resource limits for development environment
+    # Prevents resource exhaustion during development
+    deploy:
+      resources:
+        limits:
+          # Memory limit for tutorial application (128MB should be sufficient)
+          memory: 128M
+          # CPU limit (50% of one core for development)
+          cpus: '0.5'
+        reservations:
+          # Reserved memory for consistent performance
+          memory: 64M
+          # Reserved CPU for application baseline
+          cpus: '0.25'
+    
+    # Dependency ordering (none required for single service)
+    # depends_on:
+    #   - database  # Uncomment when adding database service
+    
+    # Logging configuration for development debugging
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"               # Maximum log file size
+        max-file: "3"                 # Number of log files to retain
+        labels: "service,version"     # Log labels for filtering
+    
+    # Labels for container metadata and orchestration
+    labels:
+      - "com.tutorial.service=backend"
+      - "com.tutorial.version=1.0.0"
+      - "com.tutorial.environment=development"
+      - "com.tutorial.description=Node.js Tutorial Hello World Application"
+
+# =============================================================================
+# NETWORKS CONFIGURATION
+# =============================================================================
+networks:
+  # Custom bridge network for application services
+  # Provides network isolation and service discovery
+  app-network:
+    # Network driver configuration
+    driver: bridge
+    
+    # Network-specific configuration options
+    driver_opts:
+      # Bridge name for system identification
+      com.docker.network.bridge.name: tutorial-bridge
+      
+      # Enable ICC (Inter-Container Communication)
+      com.docker.network.bridge.enable_icc: "true"
+      
+      # Enable IP masquerading for external connectivity
+      com.docker.network.bridge.enable_ip_masquerade: "true"
+    
+    # IP Address Management (IPAM) configuration
+    ipam:
+      driver: default
+      config:
+        # Subnet configuration for container IP allocation
+        - subnet: 172.20.0.0/16
+          gateway: 172.20.0.1
+    
+    # Network labels for metadata and management
+    labels:
+      - "com.tutorial.network=app-network"
+      - "com.tutorial.purpose=development"
+      - "com.tutorial.isolation=bridge"
+
+# =============================================================================
+# VOLUMES CONFIGURATION (for future expansion)
+# =============================================================================
+# volumes:
+#   # Persistent data volumes for database storage
+#   postgres_data:
+#     driver: local
+#     labels:
+#       - "com.tutorial.volume=database"
+#   
+#   # Application logs volume
+#   app_logs:
+#     driver: local
+#     labels:
+#       - "com.tutorial.volume=logs"
+
+# =============================================================================
+# SECRETS CONFIGURATION (for future expansion)
+# =============================================================================
+# secrets:
+#   # Database password secret
+#   db_password:
+#     file: ./secrets/db_password.txt
+#   
+#   # API key secret
+#   api_key:
+#     file: ./secrets/api_key.txt
+
+# =============================================================================
+# CONFIGURATION MANAGEMENT
+# =============================================================================
+# configs:
+#   # Application configuration
+#   app_config:
+#     file: ./config/app.json
+#   
+#   # Nginx configuration
+#   nginx_config:
+#     file: ./config/nginx.conf
+
+# =============================================================================
+# USAGE INSTRUCTIONS
+# =============================================================================
+# Development Commands:
+# 
+# 1. Start all services:
+#    docker-compose up
+# 
+# 2. Start services in background:
+#    docker-compose up -d
+# 
+# 3. View logs:
+#    docker-compose logs -f backend
+# 
+# 4. Stop all services:
+#    docker-compose down
+# 
+# 5. Rebuild and start:
+#    docker-compose up --build
+# 
+# 6. Execute commands in running container:
+#    docker-compose exec backend npm test
+# 
+# 7. View service status:
+#    docker-compose ps
+# 
+# 8. Scale services (for future multi-instance deployment):
+#    docker-compose up --scale backend=3
+# 
+# =============================================================================
+# PRODUCTION DEPLOYMENT CONSIDERATIONS
+# =============================================================================
+# For production deployment, consider:
+# 
+# 1. Remove volume mounts for source code
+# 2. Use production-optimized images
+# 3. Implement proper secrets management
+# 4. Add SSL/TLS termination
+# 5. Configure reverse proxy (nginx/traefik)
+# 6. Set up monitoring and logging aggregation
+# 7. Implement backup strategies
+# 8. Configure resource limits appropriately
+# 9. Use Docker Swarm or Kubernetes for orchestration
+# 10. Implement CI/CD pipeline integration
+# 
+# =============================================================================
+# TROUBLESHOOTING
+# =============================================================================
+# Common Issues and Solutions:
+# 
+# 1. Port conflicts:
+#    - Change host port mapping: "3001:3000"
+#    - Check for processes using port 3000: lsof -i :3000
+# 
+# 2. Volume mount permissions:
+#    - Ensure proper file ownership: chown -R $USER:$USER src/
+#    - Check Docker user namespace configuration
+# 
+# 3. Container not starting:
+#    - Check logs: docker-compose logs backend
+#    - Verify Dockerfile syntax and build process
+#    - Ensure all dependencies are available
+# 
+# 4. Network connectivity issues:
+#    - Verify network configuration: docker network ls
+#    - Check firewall settings and port accessibility
+#    - Ensure correct host binding (0.0.0.0 vs localhost)
+# 
+# 5. Performance issues:
+#    - Monitor resource usage: docker stats
+#    - Adjust resource limits in deploy section
+#    - Optimize Dockerfile for faster builds
+# =============================================================================
