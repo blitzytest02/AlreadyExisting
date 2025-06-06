@@ -1,0 +1,46 @@
+name: Node.js CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    # Check out the repository's source code so the workflow can access it
+    - name: Check out repository code
+      uses: actions/checkout@v4
+
+    # Set up a specific version of Node.js environment for the workflow jobs
+    # Uses Node.js v22.x with npm caching for faster builds
+    # Cache dependency path points to the backend package-lock.json
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '22.x'
+        cache: 'npm'
+        cache-dependency-path: 'src/backend/package-lock.json'
+
+    # Install project dependencies using npm ci for clean, reproducible builds
+    # npm ci is faster and more reliable than npm install for CI environments
+    - name: Install dependencies
+      working-directory: ./src/backend
+      run: npm ci
+
+    # Run security audit to scan for vulnerabilities in dependencies
+    # This addresses the dependency security management requirement
+    # npm audit checks for known security vulnerabilities in installed packages
+    - name: Run security audit
+      working-directory: ./src/backend
+      run: npm audit
+
+    # Execute the test suite to ensure code quality and functionality
+    # This implements the test automation requirement from the technical specification
+    # Tests run on every commit and pull request for continuous validation
+    - name: Run tests
+      working-directory: ./src/backend
+      run: npm test
