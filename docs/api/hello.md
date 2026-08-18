@@ -19,7 +19,7 @@ This document provides comprehensive details for the `/hello` API endpoint. This
 ## Request Specification
 
 ### HTTP Method
-- **Supported:** `GET` only
+- **Registered:** `GET`
 - **Framework-Generated Methods:** Express automatically serves `HEAD /hello` (200, headers only) and `OPTIONS /hello` (200, `Allow: GET, HEAD`) for the registered GET route; these are framework-generated responses, not additional application routes
 - **Unmatched Methods:** `POST`, `PUT`, `PATCH`, `DELETE`, and `TRACE` return 404 because no route/method pair matches
 
@@ -154,7 +154,7 @@ router.get('/', (req, res) => {
 ### Requirements Compliance
 - **F-002-RQ-001:** ✅ Route definition for `/hello` path with GET method support
 - **F-002-RQ-002:** ✅ Returns exact text "Hello world"
-- **F-002-RQ-003:** ✅ Supports only GET HTTP method
+- **F-002-RQ-003:** ✅ Registers only the GET HTTP method; Express generates the documented HEAD and OPTIONS responses
 - **F-002-RQ-004:** ✅ Includes appropriate Content-Type header (`text/html; charset=utf-8`)
 
 ---
@@ -217,7 +217,7 @@ This endpoint demonstrates:
 |-------|---------|----------|
 | Server not running | Connection refused | Start server with `npm start` |
 | Wrong port | 404 or connection error | Verify server running on port 3000 |
-| Method error | 404 response | Ensure using GET method only |
+| Unmatched method | 404 response | Use `GET`; Express also generates `HEAD` and `OPTIONS` responses for the registered GET route |
 | Network issues | Timeout | Check localhost connectivity |
 
 ### Validation Commands

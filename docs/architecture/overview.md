@@ -93,10 +93,10 @@ Express 5.1.0 introduces significant improvements including middleware that can 
 The Hello Route Handler implements the core business logic for the `/hello` endpoint, demonstrating fundamental HTTP endpoint implementation patterns and response generation techniques. This component represents the simplest possible RESTful API endpoint while maintaining production-ready code quality.
 
 **Implementation Specifications:**
-- **Route Pattern**: `/hello` with exact path matching and case-sensitive route handling
-- **HTTP Method Support**: GET method only, with proper 405 Method Not Allowed responses for other methods
+- **Route Pattern**: One route is registered at `/hello`; Express's default case-insensitive and non-strict matching also accepts case variants and a trailing slash without registering additional routes
+- **HTTP Method Support**: `GET` is the only method registered for this route and returns 200; Express additionally generates the standard `HEAD /hello` (200, headers only) and `OPTIONS /hello` (200 with `Allow: GET, HEAD`) responses for that handler, while `POST`, `PUT`, `PATCH`, `DELETE`, and `TRACE` match no route/method pair and fall through to Express's default 404 handling
 - **Response Format**: Plain text content with "Hello world" static response
-- **Content-Type Header**: Properly set text/plain header for client content type negotiation
+- **Content-Type Header**: `text/html; charset=utf-8`, which Express sets automatically because `res.send()` is called with a string; the handler sets no content type header itself
 
 **Business Logic Pattern:**
 The handler follows a stateless design pattern where each request is processed independently without maintaining session state or persistent data. This approach demonstrates scalable API design principles while keeping the implementation simple for educational purposes.
@@ -167,20 +167,22 @@ The system maintains a stateless design where no persistent data is stored betwe
 
 ### 4.1. Logging
 
-The application implements a structured logging strategy using built-in Node.js console methods enhanced with request correlation and timing information. Logging is implemented as middleware to provide consistent request tracking and debugging capabilities.
+The application implements a console-based logging strategy using the built-in Node.js `console` methods behind a small logger utility that exposes exactly two levels. Request logging is implemented as middleware mounted ahead of the routes, so each request produces a single request log line on arrival, before routing.
 
 **Logging Implementation:**
-- **Request Logging**: Each incoming HTTP request is logged with timestamp, method, path, and client information
-- **Response Logging**: Response status codes and processing times are captured for performance monitoring
+- **Request Logging**: Each incoming HTTP request is logged once on arrival by the `requestLogger` middleware, which records three values only: the method (`req.method`), the path (`req.originalUrl`), and the request body. No timestamp, response status, client IP, or user agent is captured
+- **Request Body Handling**: Object bodies are serialized with `JSON.stringify`, primitive bodies are converted with `String`, and requests carrying no body (the normal `GET /hello` case) are logged as `{}`. If serialization throws, the body is logged as `[Object - Unable to serialize]` and an additional error entry records the failure
 - **Error Logging**: Errors are logged with full stack traces and contextual information for debugging
-- **Performance Logging**: Response time measurements help identify performance bottlenecks and optimization opportunities
+- **Response and Timing Logging**: Not implemented. The request logger never reads or modifies the response object, so response status codes, processing times, and request correlation identifiers are neither measured nor logged
+- **Log Levels**: Exactly two levels exist: `info` writes to stdout through `console.log` and `error` writes to stderr through `console.error`. Each is prefixed with `[INFO]:` or `[ERROR]:` only when `NODE_ENV` is `development`
 
 **Log Format Structure:**
 ```
-[timestamp] level method path status responseTime clientIP
+HTTP Request - Method: <METHOD> Path: <PATH> Body: <BODY>     (every environment)
+[INFO]: HTTP Request - Method: GET Path: /hello Body: {}      (development adds the level prefix)
 ```
 
-This structured format enables easy parsing for log analysis tools while remaining human-readable for development environments.
+The logger passes its arguments straight to `console`, which joins them with spaces, so a development-mode `GET /hello` prints `[INFO]: HTTP Request - Method: GET Path: /hello Body: {}` and the same line appears without the prefix in other environments. The fixed field order keeps this single-line output readable during development and straightforward to grep.
 
 ### 4.2. Error Handling
 
@@ -193,9 +195,14 @@ The application implements a comprehensive error handling strategy leveraging Ex
 - **Error Information Security**: Generic error messages sent to clients while detailed errors are logged internally
 
 **Error Response Categories:**
-- **404 Not Found**: For requests to non-existent routes with helpful error messages
-- **405 Method Not Allowed**: For unsupported HTTP methods on existing routes
-- **500 Internal Server Error**: For application errors with generic error messages to prevent information disclosure
+- **404 Not Found**: Express's default 404 response, produced for requests to non-existent paths and equally for unmatched method/route pairs such as `POST /hello`; it is served as `text/html; charset=utf-8` with Express's default HTML error page (for example `Cannot POST /hello`)
+- **500 Internal Server Error**: Produced by the `errorHandler` middleware for application errors forwarded to it, with a generic message that prevents information disclosure
+
+**Error Handler Behavior (`middleware/errorHandler.js`):**
+- **Registration**: A named export (`module.exports = { errorHandler }`) using the four-argument Express error signature `(err, req, res, next)`, mounted last in `app.js` so it receives errors forwarded from every preceding layer
+- **Diagnostic Logging**: One error log entry records the error message, stack, and name together with the request URL, method, headers, params, and query, plus an ISO timestamp, the User-Agent, and the client IP
+- **Client Response**: Status `500` with a JSON envelope of exactly four fields: `error` (the generic string `Internal Server Error`), `status`, `timestamp`, and `path` (`req.originalUrl || req.url`)
+- **Termination**: The handler deliberately does not call `next()`, ending the request-response cycle; it never produces a 404, because unmatched routes fall through to Express's default 404 handling instead
 
 ### 4.3. Configuration
 

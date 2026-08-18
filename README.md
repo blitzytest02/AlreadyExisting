@@ -107,7 +107,6 @@ After starting the server, the application will be available at:
 
 - **Base URL**: `http://localhost:3000`
 - **Hello Endpoint**: `http://localhost:3000/hello`
-- **Health Check**: `http://localhost:3000/health` (if implemented)
 
 ### 📱 Testing the Endpoint
 
@@ -143,7 +142,9 @@ The application exposes a single API endpoint designed to demonstrate fundamenta
 **Description**: Returns a static "Hello world" message demonstrating basic HTTP GET request handling.
 
 **Technical Details:**
-- **Method**: GET only (other methods return 404)
+- **Registered Method**: `GET`
+- **Framework-Generated Methods**: `HEAD /hello` returns 200 with headers only, and `OPTIONS /hello` returns 200 with `Allow: GET, HEAD`
+- **Unmatched Methods**: `POST`, `PUT`, `PATCH`, `DELETE`, and `TRACE` return Express's default 404 response
 - **Response**: Plain text "Hello world"
 - **Status Code**: 200 OK
 - **Content-Type**: text/html; charset=utf-8
@@ -215,7 +216,7 @@ kubectl get all -n tutorial-app
 
 The project includes GitHub Actions workflows for continuous integration and deployment:
 
-- **CI Pipeline**: Automated testing, linting, and security scanning
+- **CI Pipeline**: Automated dependency installation, auditing, and testing
 - **CD Pipeline**: Container building and deployment automation
 - **Multi-Environment**: Support for development, staging, and production
 
@@ -246,9 +247,8 @@ npm run test:watch
 ### 🛠 Development Tools
 
 - **Nodemon**: Automatic server restart during development
-- **ESLint**: Code linting and style enforcement
-- **Prettier**: Code formatting
 - **Jest**: Testing framework with coverage reporting
+- **Supertest**: HTTP assertions for the endpoint suites
 
 ### 📝 Scripts
 
@@ -257,8 +257,8 @@ npm run test:watch
 | Start | `npm start` | Production server startup |
 | Development | `npm run dev` | Development with auto-reload |
 | Test | `npm test` | Run test suite |
-| Lint | `npm run lint` | Code linting |
-| Format | `npm run format` | Code formatting |
+| Coverage | `npm run test:coverage` | Run tests and enforce coverage thresholds |
+| Test Watch | `npm run test:watch` | Re-run tests while files change |
 
 ### 🔧 Configuration
 
@@ -270,10 +270,6 @@ PORT=3000
 NODE_ENV=development
 HOST=localhost
 LOG_LEVEL=info
-
-# Feature flags
-HEALTH_CHECK_ENABLED=true
-METRICS_ENABLED=false
 ```
 
 ## 🤝 Contributing

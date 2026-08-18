@@ -133,8 +133,7 @@ npm start
 
 Once started, the server will be accessible at:
 - **Local URL**: `http://localhost:3000`
-- **Health Check**: `http://localhost:3000/health` (if implemented)
-- **Main Endpoint**: `http://localhost:3000/api/hello`
+- **Main Endpoint**: `http://localhost:3000/hello`
 
 Expected startup time: < 5 seconds for optimal performance.
 
@@ -142,20 +141,20 @@ Expected startup time: < 5 seconds for optimal performance.
 
 ### Hello World Endpoint
 
-#### GET /api/hello
+#### GET /hello
 
 Returns a simple "Hello world" message demonstrating basic HTTP endpoint functionality.
 
 **Request Details:**
 - **Method**: GET
-- **URL**: `/api/hello`
+- **URL**: `/hello`
 - **Headers**: No special headers required
 - **Authentication**: None required
 - **Query Parameters**: None supported
 
 **Response Specification:**
 - **Status Code**: 200 (OK)
-- **Content-Type**: `text/plain`
+- **Content-Type**: `text/html; charset=utf-8`
 - **Response Body**: `Hello world`
 - **Response Time**: Target < 100ms (95th percentile)
 
@@ -163,16 +162,16 @@ Returns a simple "Hello world" message demonstrating basic HTTP endpoint functio
 
 ```bash
 # Using curl
-curl http://localhost:3000/api/hello
+curl http://localhost:3000/hello
 
 # Using wget
-wget -qO- http://localhost:3000/api/hello
+wget -qO- http://localhost:3000/hello
 
 # Using HTTPie
-http GET localhost:3000/api/hello
+http GET localhost:3000/hello
 
 # Using JavaScript fetch
-fetch('http://localhost:3000/api/hello')
+fetch('http://localhost:3000/hello')
   .then(response => response.text())
   .then(data => console.log(data));
 ```
@@ -186,8 +185,7 @@ Hello world
 
 | Status Code | Condition | Response Format |
 |-------------|-----------|-----------------|
-| 404 | Route not found | JSON error object |
-| 405 | Method not allowed | JSON error object with allowed methods |
+| 404 | Route not found | Express default HTML error page |
 | 500 | Server error | Generic error message |
 
 ## Project Structure
@@ -207,7 +205,7 @@ src/backend/
 │   └── index.js          # Environment-specific configuration
 ├── utils/                 # Utility functions and helpers
 │   └── logger.js         # Structured logging utility
-├── tests/                 # Test suites (if implemented)
+├── tests/                 # Test suites
 │   ├── unit/             # Unit tests
 │   └── integration/      # Integration tests
 ├── package.json           # Project metadata and dependency definitions
@@ -316,24 +314,6 @@ export LOG_LEVEL=info
 
 The application includes basic monitoring capabilities:
 
-**Health Endpoint** (if implemented):
-```bash
-curl http://localhost:3000/health
-```
-
-**Response Format:**
-```json
-{
-  "status": "OK",
-  "uptime": 3600,
-  "memory": {
-    "used": "25MB",
-    "total": "50MB"
-  },
-  "timestamp": "2024-01-01T12:00:00.000Z"
-}
-```
-
 ### Performance Metrics
 
 | Metric | Target | Monitoring Method |
@@ -345,7 +325,7 @@ curl http://localhost:3000/health
 
 ## Testing
 
-### Running Tests (if implemented)
+### Running Tests
 
 ```bash
 # Run all tests
@@ -363,11 +343,11 @@ npm run test:watch
 **Basic Functionality Test:**
 ```bash
 # Test hello endpoint
-curl -i http://localhost:3000/api/hello
+curl -i http://localhost:3000/hello
 
 # Expected response:
 # HTTP/1.1 200 OK
-# Content-Type: text/plain
+# Content-Type: text/html; charset=utf-8
 # 
 # Hello world
 ```

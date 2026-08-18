@@ -185,13 +185,16 @@ Examine the `package.json` file to understand the dependencies that will be inst
 - `dotenv: ^16.3.1` - Environment variable management
 
 **Development Dependencies:**
+- `jest: 30.4.2` - JavaScript testing framework that runs the unit and integration suites
 - `nodemon: ^3.0.0` - Automatic server restart during development
 - `supertest: 7.1.1` - HTTP testing library for integration tests
 
 **Package.json Scripts:**
 - `start: "node server.js"` - Production server startup
 - `dev: "nodemon server.js"` - Development server with auto-reload
-- `test: "echo \"No tests specified\""` - Test command placeholder
+- `test: "jest"` - Runs the Jest test suite (unit and integration tests)
+- `test:coverage: "jest --coverage"` - Test run that also reports coverage and enforces the configured thresholds
+- `test:watch: "jest --watch"` - Watch mode for continuous testing during development
 
 #### Step 3: Install Dependencies
 
@@ -225,9 +228,10 @@ npm audit
 **Expected Output:**
 ```
 nodejs-tutorial-app-backend@1.0.0
-├── express@5.1.0
-├── dotenv@16.3.1
-├── nodemon@3.0.0
+├── express@5.2.1
+├── dotenv@16.6.1
+├── jest@30.4.2
+├── nodemon@3.1.14
 └── supertest@7.1.1
 ```
 
@@ -476,7 +480,7 @@ curl -v http://localhost:3000/hello
 # > GET /hello HTTP/1.1
 # > Host: localhost:3000
 # < HTTP/1.1 200 OK
-# < Content-Type: text/plain; charset=utf-8
+# < Content-Type: text/html; charset=utf-8
 # Hello world
 ```
 
@@ -498,7 +502,7 @@ http GET localhost:3000/hello
 
 # Expected output:
 # HTTP/1.1 200 OK
-# Content-Type: text/plain; charset=utf-8
+# Content-Type: text/html; charset=utf-8
 # Hello world
 ```
 
@@ -549,10 +553,11 @@ curl -i http://localhost:3000/nonexistent
 
 # Expected response:
 # HTTP/1.1 404 Not Found
-# Content-Type: application/json
-# {"error": "Not Found", "message": "The requested resource was not found"}
+# Content-Type: text/html; charset=utf-8
+# Unmatched paths are handled by Express's built-in 404 handler, which returns
+# its default HTML error page containing: <pre>Cannot GET /nonexistent</pre>
 
-# Test different HTTP methods on hello endpoint
+# Test different HTTP methods on hello endpoint (each one returns 404)
 curl -X POST http://localhost:3000/hello
 curl -X PUT http://localhost:3000/hello
 curl -X DELETE http://localhost:3000/hello
@@ -566,16 +571,15 @@ Verify proper logging functionality:
 
 **Successful Request Log:**
 ```
-[INFO] GET /hello - 200 OK (15ms)
-[INFO] Client IP: 127.0.0.1
-[INFO] User-Agent: curl/7.68.0
+[INFO]: HTTP Request - Method: GET Path: /hello Body: {}
 ```
 
-**Error Request Log:**
+**Unmatched Path Request Log:**
 ```
-[WARN] GET /nonexistent - 404 Not Found (5ms)
-[ERROR] Invalid endpoint accessed: /nonexistent
+[INFO]: HTTP Request - Method: GET Path: /nonexistent Body: {}
 ```
+
+The request logger runs before routing, so every request produces exactly one line like the samples above: method, path and body only, with no status code, response time, client IP or user agent. The `[INFO]:` prefix is added only when `NODE_ENV` is `development`; other environments log the same message without it. An unmatched path is logged in exactly the same way and is then answered by Express's built-in 404 handler, so no additional log line follows.
 
 ## 6. Automated Setup
 
@@ -766,12 +770,12 @@ npm run dev
 
 #### File Watching Configuration
 
-Nodemon monitors these file types by default:
+The package's `nodemon.json` watches the backend package directory and excludes generated or test-only paths:
 ```json
 {
-  "ext": "js,json,env",
-  "ignore": ["node_modules/", ".git/"],
-  "delay": "1000ms"
+  "watch": ["./"],
+  "ext": "js,json",
+  "ignore": ["tests/", "node_modules/", "coverage/", "package-lock.json"]
 }
 ```
 
@@ -798,11 +802,12 @@ time curl http://localhost:3000/hello
 For more comprehensive testing:
 
 ```bash
-# Install testing dependencies (if not already installed)
-npm install --save-dev jest supertest
-
-# Run basic tests (when implemented)
+# Run the Jest test suite (unit and integration tests)
 npm test
+
+# Run the suite with a coverage report; Jest enforces the configured
+# 90% thresholds for routes/**/*.js and middleware/**/*.js
+npm run test:coverage
 
 # Watch mode for continuous testing
 npm run test:watch
@@ -1234,40 +1239,35 @@ require('dotenv').config({
 
 ### 9.2 Development Server Customization
 
-#### Nodemon Custom Configuration
+#### Nodemon Configuration
 
-Create `nodemon.json` in the backend directory:
+The committed `nodemon.json` is package-relative, so `npm run dev` resolves `server.js` once and watches the backend package:
 
 ```json
 {
-  "watch": ["src", "config"],
-  "ext": "js,json,env",
-  "ignore": ["node_modules", "logs", "*.test.js"],
-  "delay": "1000",
-  "env": {
-    "NODE_ENV": "development"
-  },
-  "verbose": true,
-  "restartable": "rs"
+  "watch": ["./"],
+  "ext": "js,json",
+  "ignore": [
+    "tests/",
+    "node_modules/",
+    "coverage/",
+    "package-lock.json"
+  ]
 }
 ```
 
-#### Custom npm Scripts
+#### Package Scripts
 
-Add development convenience scripts to `package.json`:
+Use the scripts declared by this package:
 
 ```json
 {
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js",
-    "dev:debug": "nodemon --inspect server.js",
-    "dev:watch": "nodemon --watch src --watch config server.js",
     "test": "jest",
     "test:watch": "jest --watch",
-    "test:coverage": "jest --coverage",
-    "lint": "eslint src/",
-    "lint:fix": "eslint src/ --fix"
+    "test:coverage": "jest --coverage"
   }
 }
 ```
@@ -1452,38 +1452,9 @@ After successfully setting up your development environment, consider these next 
 
 ### 10.1 Application Enhancement
 
-#### Add More Endpoints
+#### Trace the Existing Endpoint
 
-Extend the application with additional endpoints:
-
-```javascript
-// routes/api.js (future enhancement)
-const express = require('express');
-const router = express.Router();
-
-// Health check endpoint
-router.get('/health', (req, res) => {
-  res.json({
-    status: 'OK',
-    uptime: process.uptime(),
-    timestamp: new Date().toISOString(),
-    memory: process.memoryUsage()
-  });
-});
-
-// Version endpoint
-router.get('/version', (req, res) => {
-  const packageJson = require('../package.json');
-  res.json({
-    name: packageJson.name,
-    version: packageJson.version,
-    nodeVersion: process.version,
-    environment: process.env.NODE_ENV
-  });
-});
-
-module.exports = router;
-```
+Follow `GET /hello` from `app.js`, through the route aggregator in `routes/index.js`, to the handler in `routes/hello.js`. The maintained tutorial intentionally stops at this single registered route; any follow-on exercise that expands the route surface should update its tests and documentation together.
 
 #### Implement Request Validation
 

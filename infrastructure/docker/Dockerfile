@@ -105,7 +105,7 @@ CMD ["npm", "start"]
 # =============================================================================
 
 # Build instructions:
-# docker build -t nodejs-tutorial-app .
+# docker build -t nodejs-tutorial-app -f infrastructure/docker/Dockerfile .
 # docker run -p 3000:3000 nodejs-tutorial-app
 
 # Development override example:

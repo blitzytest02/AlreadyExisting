@@ -110,8 +110,8 @@ app.use(requestLogger);
  *
  *     '/' (here)  +  '/hello' (routes/index.js)  +  '/' (routes/hello.js)  =  GET /hello
  *
- * routes/index.js offers both '/' and '/api' as candidate mount points; '/' is the correct
- * choice here. Mounting at '/api' would relocate the endpoint to '/api/hello' and break every
+ * The application could mount this aggregator at either '/' or another prefix; '/' is the
+ * correct choice here. Mounting it at '/api' would relocate the endpoint to '/api/hello' and break every
  * consumer of the contract at once - both Jest suites, the container health check, the
  * Kubernetes probes and the tutorial documentation all request '/hello' exactly. The prefix is
  * spelled out although Express treats it as the default, because it alone decides the public URL.

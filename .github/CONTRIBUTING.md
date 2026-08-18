@@ -109,20 +109,15 @@ Before submitting a pull request, please ensure you follow these guidelines:
    - Increase the version numbers in any examples and the README.md to the new version that this Pull Request would represent
 
 4. **Testing requirements**
-   - Ensure your code passes all tests by running:
+   - From the `src/backend` package directory, ensure your code passes all tests by running:
      ```bash
      npm test
      ```
    - Tests are executed using the configuration defined in `jest.config.js`
 
 5. **Code quality standards**
-   - Ensure your code adheres to the linting rules defined in `.eslintrc.js`
-   - Follow formatting rules specified in `.prettierrc`
-   - Run the following commands to check your code:
-     ```bash
-     npm run lint
-     npm run format
-     ```
+   - Follow the code style conventions documented in `.eslintrc.js`
+   - Follow the formatting conventions documented in `.prettierrc`
 
 ### Submission Process
 
@@ -133,10 +128,10 @@ Before submitting a pull request, please ensure you follow these guidelines:
 
 2. **CI Pipeline validation**
    - The CI pipeline defined in `.github/workflows/ci.yml` must pass
-   - This includes automated testing, linting, and security checks
+   - On Node 22.x, it runs `npm ci`, `npm audit`, and `npm test` from the `src/backend` package directory
 
 3. **Code review process**
-   - A code owner from `.github/CODEOWNERS` will review your pull request
+   - A maintainer will review your pull request
    - Address any feedback or requested changes
    - Ensure all conversations are resolved before merge
 
