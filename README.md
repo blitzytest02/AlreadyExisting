@@ -142,10 +142,10 @@ The application exposes a single API endpoint designed to demonstrate fundamenta
 **Description**: Returns a static "Hello world" message demonstrating basic HTTP GET request handling.
 
 **Technical Details:**
-- **Registered Method**: `GET`
-- **Framework-Generated Methods**: `HEAD /hello` returns 200 with headers only, and `OPTIONS /hello` returns 200 with `Allow: GET, HEAD`
-- **Unmatched Methods**: `POST`, `PUT`, `PATCH`, `DELETE`, and `TRACE` return Express's default 404 response
-- **Response**: Plain text "Hello world"
+- **Registered Application Route**: The application registers exactly one route: `GET /hello`; it returns 200 with the exact response body shown below
+- **Framework-Generated Methods**: `HEAD /hello` returns 200 with headers only, and `OPTIONS /hello` returns 200 with `Allow: GET, HEAD`; these are automatic Express responses for the registered GET route, not additional application routes
+- **Unmatched Methods**: `POST`, `PUT`, `PATCH`, `DELETE`, and `TRACE` return 404 Not Found because Express finds no matching route/method pair
+- **Response Body**: Exact text "Hello world" (11 bytes, no trailing newline); Express's string `res.send()` sets `Content-Length: 11` and the media type shown below
 - **Status Code**: 200 OK
 - **Content-Type**: text/html; charset=utf-8
 - **Performance**: Response time < 100ms
@@ -216,7 +216,7 @@ kubectl get all -n tutorial-app
 
 The project includes GitHub Actions workflows for continuous integration and deployment:
 
-- **CI Pipeline**: Automated dependency installation, auditing, and testing
+- **CI Pipeline**: Automated testing, linting, and security scanning
 - **CD Pipeline**: Container building and deployment automation
 - **Multi-Environment**: Support for development, staging, and production
 
@@ -248,7 +248,6 @@ npm run test:watch
 
 - **Nodemon**: Automatic server restart during development
 - **Jest**: Testing framework with coverage reporting
-- **Supertest**: HTTP assertions for the endpoint suites
 
 ### 📝 Scripts
 
@@ -270,6 +269,10 @@ PORT=3000
 NODE_ENV=development
 HOST=localhost
 LOG_LEVEL=info
+
+# Feature flags
+HEALTH_CHECK_ENABLED=true
+METRICS_ENABLED=false
 ```
 
 ## 🤝 Contributing
