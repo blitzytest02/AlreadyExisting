@@ -62,6 +62,29 @@ const app = express();
 app.disable('x-powered-by');
 
 /**
+ * Path Matching - Express Defaults Kept Deliberately
+ *
+ * Two routing settings are left at their Express defaults, and the omission is a decision
+ * rather than an oversight, so it is recorded here:
+ *
+ *   'case sensitive routing'  false  ->  /hello, /HELLO and /Hello all reach the route
+ *   'strict routing'          false  ->  /hello and /hello/ both reach the route
+ *
+ * The endpoint being published is one route: `GET /hello`, registered once in routes/hello.js.
+ * These settings do not add a second route or a second path - the runtime route table holds a
+ * single entry either way; they only widen how liberally an incoming URL is matched against it.
+ * Turning either on would be adding a gate that rejects requests the framework accepts, which
+ * is the same class of change as answering HEAD or OPTIONS with a custom handler: outside what
+ * this tutorial sets out to teach, and outside its scope. Standard framework behaviour is
+ * preserved instead, and routes/index.js documents the case-insensitive default alongside the
+ * mount it applies to.
+ *
+ * A stricter reading of the requirement - only the exact lowercase path may answer - is a
+ * one-line change here (`app.set('case sensitive routing', true);`) and belongs to whoever owns
+ * that requirement. It is written down rather than switched on so the choice stays visible.
+ */
+
+/**
  * Middleware Pipeline
  *
  * Express runs middleware in registration order, so the three registrations below are an

@@ -8,7 +8,7 @@
  * 
  * The server implementation demonstrates fundamental Node.js server patterns
  * including event-driven architecture, error handling, and graceful startup
- * procedures. It leverages Node.js v22.16.0 LTS capabilities for optimal
+ * procedures. It leverages Node.js 22 LTS capabilities for optimal
  * performance and stability in educational and development environments.
  * 
  * Architecture Overview:
@@ -19,8 +19,8 @@
  * - Logging Integration: Structured logging for server events and status
  * 
  * Key Features:
- * - Node.js v22.16.0 LTS compatibility with long-term support guarantees
- * - Express.js 5.1.0 application integration with modern promise support
+ * - Node.js 22 LTS compatibility with long-term support guarantees
+ * - Express.js 5.x application integration with modern promise support
  * - Environment-aware configuration through centralized config management
  * - Production-ready error handling with specific error code detection
  * - Comprehensive logging for monitoring and debugging purposes
@@ -33,7 +33,7 @@
  * - F-001-RQ-004: Graceful error handling (EADDRINUSE and generic error handling)
  * 
  * Technical Specifications:
- * - Node.js Runtime: v22.16.0 LTS with enhanced security and performance
+ * - Node.js Runtime: 22 LTS with enhanced security and performance
  * - HTTP Protocol: HTTP/1.1 compliance with standard request/response patterns
  * - Event Loop Integration: Non-blocking server startup with event-driven callbacks
  * - Memory Management: Efficient server instance creation with minimal overhead
@@ -54,7 +54,7 @@
  */
 
 // Core Node.js module imports for HTTP server functionality
-const http = require('http'); // Node.js v22.16.01 - Built-in HTTP server module with HTTP/1.1 support
+const http = require('http'); // Node.js 22 LTS - Built-in HTTP server module with HTTP/1.1 support
 
 // Internal application imports for modular architecture integration
 const app = require('./app'); // Express.js application instance configured with routes and middleware
@@ -178,8 +178,19 @@ const server = http.createServer(app);
  * - Demonstrates specific error condition detection
  * - Illustrates graceful failure and recovery procedures
  * - Provides foundation for production error handling strategies
+ *
+ * Why this is a named function rather than an inline listener:
+ * server.listen() reports a startup failure in one of two ways. A failure the operating system
+ * discovers while binding (a port already taken, a port the process may not open) arrives
+ * asynchronously as an 'error' event. A port value Node can reject before it ever reaches the
+ * operating system - anything outside 0-65535 - is thrown synchronously out of the listen()
+ * call itself, where no event listener can see it. Naming the handler lets the direct-execution
+ * block below route that throw here too, so every startup failure produces the same diagnostic
+ * and the same exit code instead of a raw stack trace.
+ *
+ * @param {Error} error - The startup or runtime failure to report before terminating
  */
-server.on('error', (error) => {
+const handleServerStartupError = (error) => {
     /**
      * Error Processing and Classification
      * 
@@ -225,6 +236,28 @@ server.on('error', (error) => {
         logger.error(`   • Use a different port: PORT=3001 npm start`);
         logger.error(`   • Check for other running instances of this application`);
         logger.error(`   • Verify no other services are using port ${config.port}`);
+    } else if (error.code === 'ERR_SOCKET_BAD_PORT') {
+        /**
+         * Invalid Port Number Processing
+         *
+         * Handles the case where the configured port is not a port number the operating system
+         * can be asked for at all. TCP port numbers are 16-bit values, so Node rejects anything
+         * outside 0-65535 before attempting to bind - a validation failure rather than a
+         * binding failure, and the one startup failure that reaches this handler by being
+         * thrown out of listen() instead of emitted as an event.
+         *
+         * Developer Assistance:
+         * - States the rejected value so the source of the setting is obvious
+         * - Explains the boundary rather than only reporting that it was crossed
+         * - Names both places this tutorial reads the port from (shell and .env file)
+         * - Offers the documented default as the shortest route back to a working server
+         */
+        logger.error(`❌ Server startup failed: ${config.port} is not a valid port number`);
+        logger.error(`💡 Resolution suggestions:`);
+        logger.error(`   • Choose a port between 1024 and 65535: PORT=3001 npm start`);
+        logger.error(`   • TCP port numbers are 16-bit values, so 65535 is the highest one that exists`);
+        logger.error(`   • Unset PORT to fall back to this tutorial's documented default port`);
+        logger.error(`   • Check src/backend/.env as well as your shell - PORT may be set in either`);
     } else {
         /**
          * Generic Error Processing
@@ -303,7 +336,21 @@ server.on('error', (error) => {
     
     // Exit process with failure code to indicate startup error
     process.exit(1);
-});
+};
+
+/**
+ * Startup Failure Handler Registration
+ *
+ * Attaches the handler above to the server's 'error' event. This is the asynchronous half of
+ * the startup-failure path: everything the operating system reports while binding - a port
+ * already in use, a privileged port refused - arrives here. The synchronous half is wired in
+ * the direct-execution block below.
+ *
+ * The registration deliberately stays outside that block: it is attached to the server object
+ * rather than to the process, so importing this module for a test installs no process-wide
+ * behaviour and the listener remains inert until something actually tries to listen.
+ */
+server.on('error', handleServerStartupError);
 
 /**
  * HTTP Server Export
@@ -331,6 +378,30 @@ module.exports = server;
  * actually tries to listen.
  */
 if (require.main === module) {
+    /**
+     * Installed Express Version Resolution
+     *
+     * The startup banner below reports the framework version this process is actually running,
+     * read from Express's own package manifest instead of being written out as a literal.
+     * package.json declares the range `^5.1.0`, so the version npm resolves moves forward with
+     * every patch release: a number typed into learner-facing output is wrong the first time
+     * that happens, and a tutorial that misreports its own stack teaches the wrong thing.
+     *
+     * Reading a dependency's manifest is not a configuration read - config/index.js remains the
+     * only module in this application that touches the environment. The lookup is guarded
+     * because the banner is cosmetic: a framework release that stopped publishing its manifest
+     * must not be able to stop the server from starting, so a failed read degrades the one log
+     * token rather than the startup path.
+     *
+     * @type {string} The resolved Express version, e.g. '5.2.1'
+     */
+    let expressVersion = 'unknown';
+    try {
+        expressVersion = require('express/package.json').version;
+    } catch (versionLookupError) {
+        logger.error(`⚠️ Unable to read the installed Express version: ${versionLookupError.message}`);
+    }
+
     /**
      * Server Startup and Port Binding
      * 
@@ -389,7 +460,7 @@ if (require.main === module) {
      * - Illustrates asynchronous server startup patterns
      * - Provides foundation for understanding server lifecycle management
      */
-    server.listen(config.port, () => {
+    const handleServerListening = () => {
         /**
          * Server Startup Success Callback
          * 
@@ -448,9 +519,32 @@ if (require.main === module) {
         logger.info(`🚀 HTTP Server successfully started and listening on port ${config.port}`);
         logger.info(`🌐 Server is ready to accept HTTP requests`);
         logger.info(`📍 Local development URL: http://localhost:${config.port}`);
-        logger.info(`⚡ Node.js ${process.version} | Express 5.1.0 | Environment: ${config.nodeEnv}`);
+        logger.info(`⚡ Node.js ${process.version} | Express ${expressVersion} | Environment: ${config.nodeEnv}`);
         logger.info(`🎯 Tutorial application initialized successfully`);
-    });
+    };
+
+    /**
+     * Startup Invocation and Synchronous Failure Guard
+     *
+     * The call that turns the configured application into a running server. Its two failure
+     * modes need two different pieces of wiring, and only one of them is an event:
+     *
+     *   - The operating system refuses the bind (port in use, port not permitted). Node reports
+     *     it asynchronously through the server's 'error' event, already handled above.
+     *   - Node itself refuses the port value, because TCP ports are 16-bit and the value is
+     *     outside 0-65535. That check runs before any socket work, so listen() throws
+     *     RangeError [ERR_SOCKET_BAD_PORT] straight back at this line and no 'error' event is
+     *     ever emitted.
+     *
+     * Without this try/catch the second case escapes as an unhandled exception and the first
+     * thing a learner sees is a Node stack trace. Routing it into the same handler gives every
+     * startup failure one diagnostic, one set of resolution suggestions, and one exit code (1).
+     */
+    try {
+        server.listen(config.port, handleServerListening);
+    } catch (startupError) {
+        handleServerStartupError(startupError);
+    }
 
     /**
      * Global Error Handlers for Production Readiness

@@ -130,7 +130,7 @@ curl -i http://localhost:3000/hello
 🚀 HTTP Server successfully started and listening on port 3000
 🌐 Server is ready to accept HTTP requests
 📍 Local development URL: http://localhost:3000
-⚡ Node.js v22.16.0 | Express 5.1.0 | Environment: development
+⚡ Node.js v22.23.2 | Express 5.2.1 | Environment: development
 🎯 Tutorial application initialized successfully
 ```
 
