@@ -34,16 +34,16 @@ module.exports = {
   coverageDirectory: 'coverage',
 
   // Coverage Collection Sources
-  // Defines which files to include/exclude from coverage analysis
-  // Includes all backend source files while excluding configuration and test files
+  // Defines which files to include in coverage analysis, expressed as positive
+  // includes that are relative to this package directory (Jest is always run from
+  // src/backend, so a 'src/backend/...' prefix would match nothing and silently
+  // reduce the thresholds below to a no-op). Measures exactly the four request
+  // handling modules exercised by the unit and integration suites; the entry point,
+  // composition root, configuration, logger utility, tooling dotfiles and the tests
+  // themselves all sit outside these two directories and are excluded by construction.
   collectCoverageFrom: [
-    'src/backend/**/*.js',           // Include all backend JavaScript files
-    '!src/backend/server.js',        // Exclude main server entry point
-    '!src/backend/app.js',           // Exclude main application file
-    '!src/backend/jest.config.js',   // Exclude this configuration file
-    '!src/backend/tests/**/*.js',    // Exclude all test files
-    '!src/backend/config/**/*.js',   // Exclude configuration files
-    '!src/backend/utils/logger.js'   // Exclude logger utility
+    'routes/**/*.js',      // Route modules: index.js aggregator and hello.js handler
+    'middleware/**/*.js'   // Cross-cutting middleware: requestLogger.js and errorHandler.js
   ],
 
   // Coverage Thresholds
