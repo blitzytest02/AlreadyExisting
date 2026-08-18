@@ -59,7 +59,7 @@ const http = require('http'); // Node.js v22.16.01 - Built-in HTTP server module
 // Internal application imports for modular architecture integration
 const app = require('./app'); // Express.js application instance configured with routes and middleware
 const config = require('./config'); // Centralized configuration management with environment variable support
-const logger = require('./utils/logger'); // Structured logging utility for server events and monitoring
+const { logger } = require('./utils/logger'); // Structured logging utility for server events and monitoring
 
 /**
  * HTTP Server Instance Creation
@@ -112,127 +112,6 @@ const logger = require('./utils/logger'); // Structured logging utility for serv
  * @type {http.Server} HTTP server instance configured with Express application
  */
 const server = http.createServer(app);
-
-/**
- * Server Startup and Port Binding
- * 
- * Initiates the HTTP server startup process by binding to the configured
- * network port and beginning to listen for incoming HTTP connections.
- * This operation establishes the server's network presence and enables
- * client communication through standard HTTP protocols.
- * 
- * Port Configuration Strategy:
- * - Configurable port via environment variables (PORT=3000 default)
- * - Fallback to default port 3000 for local development
- * - Port validation and availability checking
- * - Support for privileged (< 1024) and non-privileged ports
- * - Development-friendly port assignment
- * 
- * Startup Process Flow:
- * 1. Server attempts to bind to specified port
- * 2. Operating system allocates network socket
- * 3. Server begins listening for incoming connections
- * 4. Startup success callback executes upon successful binding
- * 5. Server ready to accept and process HTTP requests
- * 
- * Network Interface Binding:
- * - Binds to all available network interfaces (0.0.0.0)
- * - IPv4 and IPv6 protocol support
- * - Local development (127.0.0.1) and network access capability
- * - Container and cloud deployment compatibility
- * 
- * Asynchronous Startup Pattern:
- * - Non-blocking server initialization
- * - Event-driven startup completion notification
- * - Promise-based error handling for startup failures
- * - Graceful degradation on startup errors
- * 
- * Requirements Implementation:
- * - F-001-RQ-001: Server startup capability (Core implementation)
- * - F-001-RQ-003: Port configuration (Environment-configurable port)
- * - Server Infrastructure: Network socket binding and connection acceptance
- * - Development Environment: Local development server capability
- * 
- * Performance Monitoring:
- * - Startup time measurement for performance tracking
- * - Memory usage monitoring during server initialization
- * - Network interface availability validation
- * - Resource allocation verification
- * 
- * Error Recovery Preparation:
- * - Startup failure detection through error event handling
- * - Resource cleanup on startup failure
- * - Process termination coordination for failed startup
- * - Diagnostic information collection for troubleshooting
- * 
- * Educational Demonstration:
- * - Shows proper server.listen() usage with callback pattern
- * - Demonstrates port configuration best practices
- * - Illustrates asynchronous server startup patterns
- * - Provides foundation for understanding server lifecycle management
- */
-server.listen(config.port, () => {
-    /**
-     * Server Startup Success Callback
-     * 
-     * Executes upon successful server startup and port binding, providing
-     * confirmation that the HTTP server is operational and ready to accept
-     * incoming client connections. This callback implements startup success
-     * logging and status reporting for monitoring and debugging purposes.
-     * 
-     * Startup Success Validation:
-     * - Server successfully bound to configured port
-     * - Network socket allocated and listening
-     * - Express application integrated and ready
-     * - Event loop processing incoming connections
-     * - HTTP request/response cycle operational
-     * 
-     * Success Logging Implementation:
-     * - Structured log entry with server status information
-     * - Port number confirmation for network connectivity verification
-     * - Environment context (development/production) indication
-     * - Timestamp marking for startup performance analysis
-     * - Process ID logging for multi-instance deployment tracking
-     * 
-     * Monitoring Integration:
-     * - Server readiness indication for health checks
-     * - Startup time measurement for performance monitoring
-     * - Resource utilization baseline establishment
-     * - Service discovery registration trigger point
-     * - Load balancer health check endpoint availability
-     * 
-     * Development Environment Support:
-     * - Clear console output for developer feedback
-     * - Port accessibility confirmation for local testing
-     * - Application URL generation for browser access
-     * - Development tool integration signals
-     * - Hot reload capability indication
-     * 
-     * Production Readiness Indicators:
-     * - Service availability confirmation
-     * - Health check endpoint responsiveness
-     * - Monitoring system integration points
-     * - Container orchestration readiness signals
-     * - Load balancer registration capability
-     * 
-     * Requirements Fulfillment:
-     * - F-001-RQ-001: Server startup capability (Success confirmation)
-     * - F-001-RQ-003: Port configuration (Port binding verification)
-     * - Server Status Reporting: Operational status communication
-     * - Development Feedback: Clear startup success indication
-     * 
-     * Educational Value:
-     * - Demonstrates callback pattern for asynchronous operations
-     * - Shows proper success logging implementation
-     * - Illustrates server lifecycle event handling
-     * - Provides template for production monitoring integration
-     */
-    logger.info(`🚀 HTTP Server successfully started and listening on port ${config.port}`);
-    logger.info(`🌐 Server is ready to accept HTTP requests`);
-    logger.info(`📍 Local development URL: http://localhost:${config.port}`);
-    logger.info(`⚡ Node.js ${process.version} | Express 5.1.0 | Environment: ${config.nodeEnv}`);
-    logger.info(`🎯 Tutorial application initialized successfully`);
-});
 
 /**
  * Server Error Event Handler
@@ -427,37 +306,185 @@ server.on('error', (error) => {
 });
 
 /**
- * Global Error Handlers for Production Readiness
- * 
- * Implements additional error handling for unhandled promise rejections
- * and uncaught exceptions to ensure application stability and proper
- * error reporting in all error scenarios.
+ * HTTP Server Export
+ *
+ * Publishes the server instance so tests can own its lifecycle: the integration suite
+ * requires this module, calls server.listen(0) to claim an ephemeral port, issues its
+ * assertions, and calls server.close(). The export is declared before the direct-execution
+ * guard below so the module presents the same shape however it was loaded.
+ *
+ * @type {http.Server}
  */
+module.exports = server;
 
 /**
- * Unhandled Promise Rejection Handler
- * 
- * Catches unhandled promise rejections that could crash the Node.js
- * process and provides proper logging and graceful termination.
+ * Direct Execution Guard
+ *
+ * Everything inside this block runs only when this file is the program entry point
+ * (`node server.js`, which is what `npm start` and the container CMD invoke). Importing the
+ * module instead - as the integration suite does - must not bind a port and must not install
+ * process-wide handlers: binding would collide with the suite's own ephemeral listener, and
+ * the process.exit(1) handlers below would be able to kill the Jest worker.
+ *
+ * The server-level 'error' listener above stays outside this guard deliberately: it is
+ * attached to the server object rather than to the process, so it is inert until something
+ * actually tries to listen.
  */
-process.on('unhandledRejection', (reason, promise) => {
-    logger.error(`❌ Unhandled Promise Rejection at:`, promise);
-    logger.error(`💥 Rejection reason:`, reason);
-    logger.error(`🛑 Application terminating due to unhandled promise rejection`);
-    process.exit(1);
-});
+if (require.main === module) {
+    /**
+     * Server Startup and Port Binding
+     * 
+     * Initiates the HTTP server startup process by binding to the configured
+     * network port and beginning to listen for incoming HTTP connections.
+     * This operation establishes the server's network presence and enables
+     * client communication through standard HTTP protocols.
+     * 
+     * Port Configuration Strategy:
+     * - Configurable port via environment variables (PORT=3000 default)
+     * - Fallback to default port 3000 for local development
+     * - Port validation and availability checking
+     * - Support for privileged (< 1024) and non-privileged ports
+     * - Development-friendly port assignment
+     * 
+     * Startup Process Flow:
+     * 1. Server attempts to bind to specified port
+     * 2. Operating system allocates network socket
+     * 3. Server begins listening for incoming connections
+     * 4. Startup success callback executes upon successful binding
+     * 5. Server ready to accept and process HTTP requests
+     * 
+     * Network Interface Binding:
+     * - Binds to all available network interfaces (0.0.0.0)
+     * - IPv4 and IPv6 protocol support
+     * - Local development (127.0.0.1) and network access capability
+     * - Container and cloud deployment compatibility
+     * 
+     * Asynchronous Startup Pattern:
+     * - Non-blocking server initialization
+     * - Event-driven startup completion notification
+     * - Promise-based error handling for startup failures
+     * - Graceful degradation on startup errors
+     * 
+     * Requirements Implementation:
+     * - F-001-RQ-001: Server startup capability (Core implementation)
+     * - F-001-RQ-003: Port configuration (Environment-configurable port)
+     * - Server Infrastructure: Network socket binding and connection acceptance
+     * - Development Environment: Local development server capability
+     * 
+     * Performance Monitoring:
+     * - Startup time measurement for performance tracking
+     * - Memory usage monitoring during server initialization
+     * - Network interface availability validation
+     * - Resource allocation verification
+     * 
+     * Error Recovery Preparation:
+     * - Startup failure detection through error event handling
+     * - Resource cleanup on startup failure
+     * - Process termination coordination for failed startup
+     * - Diagnostic information collection for troubleshooting
+     * 
+     * Educational Demonstration:
+     * - Shows proper server.listen() usage with callback pattern
+     * - Demonstrates port configuration best practices
+     * - Illustrates asynchronous server startup patterns
+     * - Provides foundation for understanding server lifecycle management
+     */
+    server.listen(config.port, () => {
+        /**
+         * Server Startup Success Callback
+         * 
+         * Executes upon successful server startup and port binding, providing
+         * confirmation that the HTTP server is operational and ready to accept
+         * incoming client connections. This callback implements startup success
+         * logging and status reporting for monitoring and debugging purposes.
+         * 
+         * Startup Success Validation:
+         * - Server successfully bound to configured port
+         * - Network socket allocated and listening
+         * - Express application integrated and ready
+         * - Event loop processing incoming connections
+         * - HTTP request/response cycle operational
+         * 
+         * Success Logging Implementation:
+         * - Structured log entry with server status information
+         * - Port number confirmation for network connectivity verification
+         * - Environment context (development/production) indication
+         * - Timestamp marking for startup performance analysis
+         * - Process ID logging for multi-instance deployment tracking
+         * 
+         * Monitoring Integration:
+         * - Server readiness indication for health checks
+         * - Startup time measurement for performance monitoring
+         * - Resource utilization baseline establishment
+         * - Service discovery registration trigger point
+         * - Load balancer health check endpoint availability
+         * 
+         * Development Environment Support:
+         * - Clear console output for developer feedback
+         * - Port accessibility confirmation for local testing
+         * - Application URL generation for browser access
+         * - Development tool integration signals
+         * - Hot reload capability indication
+         * 
+         * Production Readiness Indicators:
+         * - Service availability confirmation
+         * - Health check endpoint responsiveness
+         * - Monitoring system integration points
+         * - Container orchestration readiness signals
+         * - Load balancer registration capability
+         * 
+         * Requirements Fulfillment:
+         * - F-001-RQ-001: Server startup capability (Success confirmation)
+         * - F-001-RQ-003: Port configuration (Port binding verification)
+         * - Server Status Reporting: Operational status communication
+         * - Development Feedback: Clear startup success indication
+         * 
+         * Educational Value:
+         * - Demonstrates callback pattern for asynchronous operations
+         * - Shows proper success logging implementation
+         * - Illustrates server lifecycle event handling
+         * - Provides template for production monitoring integration
+         */
+        logger.info(`🚀 HTTP Server successfully started and listening on port ${config.port}`);
+        logger.info(`🌐 Server is ready to accept HTTP requests`);
+        logger.info(`📍 Local development URL: http://localhost:${config.port}`);
+        logger.info(`⚡ Node.js ${process.version} | Express 5.1.0 | Environment: ${config.nodeEnv}`);
+        logger.info(`🎯 Tutorial application initialized successfully`);
+    });
 
-/**
- * Uncaught Exception Handler
- * 
- * Provides last-resort error handling for uncaught exceptions
- * that escape the normal error handling mechanisms.
- */
-process.on('uncaughtException', (error) => {
-    logger.error(`❌ Uncaught Exception:`, error);
-    logger.error(`🛑 Application terminating due to uncaught exception`);
-    process.exit(1);
-});
+    /**
+     * Global Error Handlers for Production Readiness
+     * 
+     * Implements additional error handling for unhandled promise rejections
+     * and uncaught exceptions to ensure application stability and proper
+     * error reporting in all error scenarios.
+     */
+
+    /**
+     * Unhandled Promise Rejection Handler
+     * 
+     * Catches unhandled promise rejections that could crash the Node.js
+     * process and provides proper logging and graceful termination.
+     */
+    process.on('unhandledRejection', (reason, promise) => {
+        logger.error(`❌ Unhandled Promise Rejection at:`, promise);
+        logger.error(`💥 Rejection reason:`, reason);
+        logger.error(`🛑 Application terminating due to unhandled promise rejection`);
+        process.exit(1);
+    });
+
+    /**
+     * Uncaught Exception Handler
+     * 
+     * Provides last-resort error handling for uncaught exceptions
+     * that escape the normal error handling mechanisms.
+     */
+    process.on('uncaughtException', (error) => {
+        logger.error(`❌ Uncaught Exception:`, error);
+        logger.error(`🛑 Application terminating due to uncaught exception`);
+        process.exit(1);
+    });
+}
 
 /**
  * File Documentation Summary
