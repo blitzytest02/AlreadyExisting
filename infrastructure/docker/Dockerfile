@@ -17,7 +17,7 @@ WORKDIR /usr/src/app
 
 # Copy package management files first for optimal Docker layer caching
 # This allows Docker to cache the npm install step when only source code changes
-COPY package.json package-lock.json ./
+COPY src/backend/package.json src/backend/package-lock.json ./
 
 # Install all dependencies (including devDependencies for potential build steps)
 # Using npm ci for faster, reliable, reproducible builds in production environments
@@ -53,13 +53,17 @@ COPY --from=builder /usr/src/app/package.json /usr/src/app/package-lock.json ./
 
 # Install only production dependencies to minimize image size and security exposure
 # --omit=dev excludes devDependencies from installation
-# --only=production ensures only runtime dependencies are installed
-RUN npm ci --omit=dev --only=production \
+RUN npm ci --omit=dev \
     && npm cache clean --force
 
 # Copy application source code from builder stage
 # This ensures only necessary files are included in the final image
-COPY --from=builder /usr/src/app/src/backend/ ./
+# Copied paths: server.js, app.js, config/, routes/, middleware/, utils/
+COPY --from=builder /usr/src/app/server.js /usr/src/app/app.js ./
+COPY --from=builder /usr/src/app/config/ ./config/
+COPY --from=builder /usr/src/app/routes/ ./routes/
+COPY --from=builder /usr/src/app/middleware/ ./middleware/
+COPY --from=builder /usr/src/app/utils/ ./utils/
 
 # Create a non-root user for enhanced container security
 # This follows security best practices by avoiding running as root

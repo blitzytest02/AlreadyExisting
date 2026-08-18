@@ -145,6 +145,7 @@ describe('errorHandler middleware', () => {
             expect(payload.error).toBe('Internal Server Error');
             expect(payload.status).toBe(500);
             expect(payload.path).toBe('/hello');
+            expect(next).not.toHaveBeenCalled();
         });
 
         /**
@@ -156,13 +157,15 @@ describe('errorHandler middleware', () => {
             const err = new Error('Timestamped failure');
             const req = createRequest();
             const res = createResponse();
+            const next = jest.fn();
 
-            errorHandler(err, req, res, jest.fn());
+            errorHandler(err, req, res, next);
 
             const { timestamp } = jsonPayload(res);
             expect(typeof timestamp).toBe('string');
             expect(timestamp).toMatch(ISO_8601);
             expect(new Date(timestamp).toISOString()).toBe(timestamp);
+            expect(next).not.toHaveBeenCalled();
         });
 
         /**
@@ -177,8 +180,9 @@ describe('errorHandler middleware', () => {
             err.stack = 'Error: database credentials rejected\n    at leakyCall (secretModule.js:1:1)';
             const req = createRequest();
             const res = createResponse();
+            const next = jest.fn();
 
-            errorHandler(err, req, res, jest.fn());
+            errorHandler(err, req, res, next);
 
             const payload = jsonPayload(res);
             const serialised = JSON.stringify(payload);
@@ -193,6 +197,7 @@ describe('errorHandler middleware', () => {
             // The detail is retained server-side for debugging instead of being sent.
             expect(logContext().errorMessage).toBe('database credentials rejected');
             expect(logContext().errorStack).toContain('secretModule.js');
+            expect(next).not.toHaveBeenCalled();
         });
 
         /**
@@ -203,13 +208,15 @@ describe('errorHandler middleware', () => {
             const err = new Error('Single write');
             const req = createRequest();
             const res = createResponse();
+            const next = jest.fn();
 
-            errorHandler(err, req, res, jest.fn());
+            errorHandler(err, req, res, next);
 
             expect(res.json).toHaveBeenCalledTimes(1);
             expect(res.send).not.toHaveBeenCalled();
             expect(res.set).not.toHaveBeenCalled();
             expect(res.end).not.toHaveBeenCalled();
+            expect(next).not.toHaveBeenCalled();
         });
     });
 
@@ -227,8 +234,9 @@ describe('errorHandler middleware', () => {
                 query: { verbose: 'true' }
             });
             const res = createResponse();
+            const next = jest.fn();
 
-            errorHandler(err, req, res, jest.fn());
+            errorHandler(err, req, res, next);
 
             expect(errorSpy).toHaveBeenCalledTimes(1);
             expect(errorSpy.mock.calls[0]).toHaveLength(2);
@@ -259,6 +267,7 @@ describe('errorHandler middleware', () => {
             expect(context.requestParams).toBe(req.params);
             expect(context.requestQuery).toBe(req.query);
             expect(context.timestamp).toMatch(ISO_8601);
+            expect(next).not.toHaveBeenCalled();
         });
 
         /**
@@ -275,12 +284,14 @@ describe('errorHandler middleware', () => {
             const err = new ValidationError('field is required');
             const req = createRequest();
             const res = createResponse();
+            const next = jest.fn();
 
-            errorHandler(err, req, res, jest.fn());
+            errorHandler(err, req, res, next);
 
             expect(logContext().errorName).toBe('ValidationError');
             expect(logContext().errorMessage).toBe('field is required');
             expect(res.status).toHaveBeenCalledWith(500);
+            expect(next).not.toHaveBeenCalled();
         });
 
         /**
@@ -291,12 +302,14 @@ describe('errorHandler middleware', () => {
             const err = new Error('Agent check');
             const req = createRequest();
             const res = createResponse();
+            const next = jest.fn();
 
-            errorHandler(err, req, res, jest.fn());
+            errorHandler(err, req, res, next);
 
             expect(req.get).toHaveBeenCalledTimes(1);
             expect(req.get).toHaveBeenCalledWith('User-Agent');
             expect(logContext().userAgent).toBe('jest-test-agent');
+            expect(next).not.toHaveBeenCalled();
         });
 
         /**
@@ -307,12 +320,14 @@ describe('errorHandler middleware', () => {
             const err = new Error('No agent');
             const req = createRequest({ get: jest.fn(() => undefined) });
             const res = createResponse();
+            const next = jest.fn();
 
-            errorHandler(err, req, res, jest.fn());
+            errorHandler(err, req, res, next);
 
             expect(req.get).toHaveBeenCalledWith('User-Agent');
             expect(logContext().userAgent).toBeUndefined();
             expect('userAgent' in logContext()).toBe(true);
+            expect(next).not.toHaveBeenCalled();
         });
     });
 
@@ -326,11 +341,13 @@ describe('errorHandler middleware', () => {
             const err = new Error('Url precedence');
             const req = createRequest({ originalUrl: '/hello', url: '/rewritten-internally' });
             const res = createResponse();
+            const next = jest.fn();
 
-            errorHandler(err, req, res, jest.fn());
+            errorHandler(err, req, res, next);
 
             expect(logContext().requestUrl).toBe('/hello');
             expect(jsonPayload(res).path).toBe('/hello');
+            expect(next).not.toHaveBeenCalled();
         });
 
         /**
@@ -341,11 +358,13 @@ describe('errorHandler middleware', () => {
             const err = new Error('Url fallback');
             const req = createRequest({ originalUrl: undefined, url: '/fallback-path' });
             const res = createResponse();
+            const next = jest.fn();
 
-            errorHandler(err, req, res, jest.fn());
+            errorHandler(err, req, res, next);
 
             expect(logContext().requestUrl).toBe('/fallback-path');
             expect(jsonPayload(res).path).toBe('/fallback-path');
+            expect(next).not.toHaveBeenCalled();
         });
 
         /**
@@ -356,10 +375,12 @@ describe('errorHandler middleware', () => {
             const err = new Error('Ip precedence');
             const req = createRequest({ ip: '192.168.1.50', connection: { remoteAddress: '10.0.0.7' } });
             const res = createResponse();
+            const next = jest.fn();
 
-            errorHandler(err, req, res, jest.fn());
+            errorHandler(err, req, res, next);
 
             expect(logContext().clientIP).toBe('192.168.1.50');
+            expect(next).not.toHaveBeenCalled();
         });
 
         /**
@@ -370,10 +391,12 @@ describe('errorHandler middleware', () => {
             const err = new Error('Ip fallback');
             const req = createRequest({ ip: undefined, connection: { remoteAddress: '10.0.0.7' } });
             const res = createResponse();
+            const next = jest.fn();
 
-            errorHandler(err, req, res, jest.fn());
+            errorHandler(err, req, res, next);
 
             expect(logContext().clientIP).toBe('10.0.0.7');
+            expect(next).not.toHaveBeenCalled();
         });
     });
 
@@ -409,11 +432,13 @@ describe('errorHandler middleware', () => {
             const err = new Error('Sync');
             const req = createRequest();
             const res = createResponse();
+            const next = jest.fn();
 
-            const result = errorHandler(err, req, res, jest.fn());
+            const result = errorHandler(err, req, res, next);
 
             expect(result).toBeUndefined();
             expect(res.json).toHaveBeenCalledTimes(1);
+            expect(next).not.toHaveBeenCalled();
         });
 
         /**
@@ -425,13 +450,15 @@ describe('errorHandler middleware', () => {
             const err = new Error('Isolation');
             const req = createRequest();
             const res = createResponse();
+            const next = jest.fn();
 
-            errorHandler(err, req, res, jest.fn());
+            errorHandler(err, req, res, next);
 
             expect(errorSpy).toHaveBeenCalledTimes(1);
             expect(res.status).toHaveBeenCalledTimes(1);
             expect(res.json).toHaveBeenCalledTimes(1);
             expect(jsonPayload(res).status).toBe(500);
+            expect(next).not.toHaveBeenCalled();
         });
     });
 });

@@ -51,7 +51,6 @@
 const request = require('supertest'); // v7.1.1 - HTTP assertions library for testing Express applications
 
 // Internal application imports for integration testing setup
-const app = require('../../app.js'); // Express application instance with configured middleware and routing
 const server = require('../../server.js'); // HTTP server instance for lifecycle management during tests
 
 /**
@@ -269,7 +268,7 @@ describe('Hello API Endpoint', () => {
         // Send HTTP GET request to /hello endpoint using Supertest
         // Supertest creates a real HTTP client and sends the request through
         // the complete networking stack to test the actual server behavior
-        const response = await request(app)
+        const response = await request(server)
             .get('/hello')
             .expect(200) // Assert HTTP status code is 200 (OK)
             .expect('Content-Type', /text\/html/) // Assert Content-Type header includes 'text/html'
@@ -356,7 +355,7 @@ describe('Hello API Endpoint', () => {
     it('should return 404 Not Found for a non-existent route', async () => {
         // Send HTTP GET request to a deliberately non-existent endpoint
         // This tests the application's error handling for unmatched routes
-        const response = await request(app)
+        const response = await request(server)
             .get('/nonexistent')
             .expect(404); // Assert HTTP status code is 404 (Not Found)
 
@@ -386,8 +385,8 @@ describe('Hello API Endpoint', () => {
      * Future test cases that could be added to enhance coverage:
      * 
      * 1. HTTP Method Validation:
-     *    - Test POST, PUT, DELETE methods to /hello (should return 405 Method Not Allowed)
-     *    - Validate that only GET method is supported for the endpoint
+     *    - Test POST, PUT, PATCH, DELETE and TRACE on /hello (all 404 - only GET is registered)
+     *    - Test HEAD /hello (200) and OPTIONS /hello (200, 'Allow: GET, HEAD'), both Express-generated
      * 
      * 2. Request Header Handling:
      *    - Test various Accept headers and content negotiation

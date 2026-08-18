@@ -180,9 +180,9 @@ describe('/hello endpoint', () => {
      * would provide comprehensive coverage of edge cases and advanced scenarios:
      * 
      * HTTP Method Validation:
-     * - POST, PUT, DELETE requests to /hello should return 405 Method Not Allowed
-     * - OPTIONS requests should return appropriate CORS headers
-     * - HEAD requests should return headers without response body
+     * - POST, PUT, PATCH, DELETE, TRACE on /hello: 404, as only the GET route is registered
+     * - OPTIONS /hello: Express-generated 200 with 'Allow: GET, HEAD', and no CORS middleware
+     * - HEAD /hello: Express-generated 200 with headers and no body, from that same GET route
      * 
      * Performance Testing:
      * - Response time validation under load conditions
@@ -206,10 +206,10 @@ describe('/hello endpoint', () => {
      * 
      * Example Future Test Cases:
      * 
-     * it('should return 405 for POST requests to /hello', async () => {
+     * it('should return 404 for POST requests to /hello', async () => {
      *     await request(app)
      *         .post('/hello')
-     *         .expect(405);
+     *         .expect(404);
      * });
      * 
      * it('should respond within 100ms performance target', async () => {

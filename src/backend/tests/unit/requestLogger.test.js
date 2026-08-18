@@ -169,6 +169,7 @@ describe('requestLogger middleware', () => {
             expectRequestLogged('POST', '/hello', '{}');
             expect(errorSpy).not.toHaveBeenCalled();
             expect(next).toHaveBeenCalledTimes(1);
+            expect(next).toHaveBeenCalledWith();
             expectResponseUntouched(res);
         });
 
@@ -188,6 +189,7 @@ describe('requestLogger middleware', () => {
             expectRequestLogged('POST', '/hello', JSON.stringify(body));
             expect(errorSpy).not.toHaveBeenCalled();
             expect(next).toHaveBeenCalledTimes(1);
+            expect(next).toHaveBeenCalledWith();
             expectResponseUntouched(res);
         });
 
@@ -206,6 +208,8 @@ describe('requestLogger middleware', () => {
             expectRequestLogged('PUT', '/hello', JSON.stringify(body));
             expect(errorSpy).not.toHaveBeenCalled();
             expect(next).toHaveBeenCalledTimes(1);
+            expect(next).toHaveBeenCalledWith();
+            expectResponseUntouched(res);
         });
 
         /**
@@ -226,6 +230,8 @@ describe('requestLogger middleware', () => {
             expectRequestLogged('POST', '/hello?verbose=true', 'raw text');
             expect(errorSpy).not.toHaveBeenCalled();
             expect(next).toHaveBeenCalledTimes(1);
+            expect(next).toHaveBeenCalledWith();
+            expectResponseUntouched(res);
         });
 
         /**
@@ -240,7 +246,10 @@ describe('requestLogger middleware', () => {
             requestLogger(req, res, next);
 
             expectRequestLogged('PATCH', '/hello', '42');
+            expect(errorSpy).not.toHaveBeenCalled();
             expect(next).toHaveBeenCalledTimes(1);
+            expect(next).toHaveBeenCalledWith();
+            expectResponseUntouched(res);
         });
 
         /**
@@ -257,7 +266,10 @@ describe('requestLogger middleware', () => {
             requestLogger(req, res, next);
 
             expectRequestLogged('DELETE', '/hello', 'true');
+            expect(errorSpy).not.toHaveBeenCalled();
             expect(next).toHaveBeenCalledTimes(1);
+            expect(next).toHaveBeenCalledWith();
+            expectResponseUntouched(res);
         });
 
         /**
@@ -273,7 +285,10 @@ describe('requestLogger middleware', () => {
             requestLogger(req, res, next);
 
             expectRequestLogged('POST', '/hello', 'false');
+            expect(errorSpy).not.toHaveBeenCalled();
             expect(next).toHaveBeenCalledTimes(1);
+            expect(next).toHaveBeenCalledWith();
+            expectResponseUntouched(res);
         });
     });
 
@@ -336,7 +351,10 @@ describe('requestLogger middleware', () => {
                 'for path:',
                 '/hello/deep-path'
             );
+            expect(errorSpy).toHaveBeenCalledTimes(1);
             expect(next).toHaveBeenCalledTimes(1);
+            expect(next).toHaveBeenCalledWith();
+            expectResponseUntouched(res);
         });
 
         /**
@@ -354,6 +372,8 @@ describe('requestLogger middleware', () => {
             expectRequestLogged('POST', '/hello', '[Object - Unable to serialize]');
             expect(errorSpy).toHaveBeenCalledTimes(1);
             expect(next).toHaveBeenCalledTimes(1);
+            expect(next).toHaveBeenCalledWith();
+            expectResponseUntouched(res);
         });
 
         /**
@@ -370,6 +390,8 @@ describe('requestLogger middleware', () => {
             expectRequestLogged('POST', '/hello', '7');
             expect(errorSpy).not.toHaveBeenCalled();
             expect(next).toHaveBeenCalledTimes(1);
+            expect(next).toHaveBeenCalledWith();
+            expectResponseUntouched(res);
         });
     });
 
@@ -388,7 +410,9 @@ describe('requestLogger middleware', () => {
             requestLogger(req, res, next);
 
             expectRequestLogged('GET', '/nonexistent', '{}');
+            expect(errorSpy).not.toHaveBeenCalled();
             expect(next).toHaveBeenCalledTimes(1);
+            expect(next).toHaveBeenCalledWith();
             expectResponseUntouched(res);
         });
 
@@ -416,6 +440,8 @@ describe('requestLogger middleware', () => {
             expect(errorSpy).toHaveBeenCalledTimes(0);
             expectRequestLogged('GET', '/hello', '{}');
             expect(next).toHaveBeenCalledTimes(1);
+            expect(next).toHaveBeenCalledWith();
+            expectResponseUntouched(res);
         });
 
         /**
@@ -430,7 +456,10 @@ describe('requestLogger middleware', () => {
             const result = requestLogger(req, res, next);
 
             expect(result).toBeUndefined();
+            expect(errorSpy).not.toHaveBeenCalled();
             expect(next).toHaveBeenCalledTimes(1);
+            expect(next).toHaveBeenCalledWith();
+            expectResponseUntouched(res);
         });
     });
 });

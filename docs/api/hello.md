@@ -20,7 +20,8 @@ This document provides comprehensive details for the `/hello` API endpoint. This
 
 ### HTTP Method
 - **Supported:** `GET` only
-- **Unsupported Methods:** All other HTTP methods (POST, PUT, DELETE, PATCH, etc.) will result in 404 responses
+- **Framework-Generated Methods:** Express automatically serves `HEAD /hello` (200, headers only) and `OPTIONS /hello` (200, `Allow: GET, HEAD`) for the registered GET route; these are framework-generated responses, not additional application routes
+- **Unmatched Methods:** `POST`, `PUT`, `PATCH`, `DELETE`, and `TRACE` return 404 because no route/method pair matches
 
 ### Request Parameters
 This endpoint does not require any parameters, headers, or request body:
@@ -69,8 +70,8 @@ Keep-Alive: timeout=5
 
 ## Error Responses
 
-### Method Not Allowed
-- **Scenario:** When using HTTP methods other than GET (POST, PUT, DELETE, etc.)
+### Unmatched Method on an Existing Path
+- **Scenario:** When sending `POST`, `PUT`, `PATCH`, `DELETE`, or `TRACE` to `/hello`
 - **Status Code:** `404 Not Found`
 - **Reason:** Express.js default behavior for unmatched route/method combinations
 - **Content-Type:** `text/html; charset=utf-8`
