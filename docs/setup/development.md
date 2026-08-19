@@ -739,12 +739,26 @@ on they read `22.23.2`, `11.18.0` and `29.7.0`:
 - Production-optimized image with non-root user
 - Tagged as `nodejs-tutorial-app:latest`
 
-**Sample Output:**
+**Sample Output** — the size on the last line is read back from `docker images` after the build, so it
+is whatever your platform produces rather than a fixed number. It varies with the `node:22-alpine`
+base image and the CPU architecture; on the environment this guide is validated on (linux/amd64) it
+reads `171MB`:
 ```
 [INFO] Phase 3/3: Docker Image Build
 [INFO] Building containerized version of Node.js tutorial application
 [SUCCESS] Docker image built successfully: nodejs-tutorial-app:latest
-[INFO] Final image size: 145MB
+[INFO] Final image size: 171MB
+```
+
+The script closes with a summary whose dependency line is also read back from the installed tree, so
+it names the version `package-lock.json` actually resolved rather than a literal baked into the
+script:
+```
+[INFO] Setup Summary:
+[INFO]   ✓ System prerequisites verified (Node.js, npm, Docker)
+[INFO]   ✓ Backend dependencies installed (Express ^5.1.0 resolved to 5.2.1 + related packages)
+[INFO]   ✓ Docker image built (nodejs-tutorial-app:latest)
+[INFO]   ✓ Environment ready for development and testing
 ```
 
 ### 6.4 Post-Script Verification

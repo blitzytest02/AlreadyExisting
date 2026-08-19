@@ -11,7 +11,8 @@
 #
 # Version: 1.0.0
 # Author: Development Team
-# Target: Node.js v22.16.0 LTS with Express.js 5.1.0
+# Target: Node.js 22.x LTS (validated on v22.23.2) with Express 5.x
+#         (package.json declares ^5.1.0; package-lock.json resolves 5.2.1)
 # 
 # Requirements Addressed:
 # - Development Environment Setup (TECHNICAL_SPECIFICATIONS.md/3.6.3)
@@ -67,10 +68,10 @@ check_prerequisites() {
     log_info "Checking system prerequisites for Node.js tutorial application setup..."
     
     # Check for Node.js installation and version compatibility
-    # Technical Specification requirement: Node.js >= 18.0.0 (Target: v22.16.0 LTS)
+    # package.json requirement: Node.js >= 18.0.0 (22.x LTS recommended)
     if ! command -v node &> /dev/null; then
         log_error "Node.js is not installed or not in PATH"
-        log_error "Please install Node.js v22.16.0 LTS from: https://nodejs.org/"
+        log_error "Please install a Node.js 22.x LTS release from: https://nodejs.org/"
         log_error "Minimum required version: 18.0.0"
         exit 1
     fi
@@ -82,7 +83,7 @@ check_prerequisites() {
     if [ "$NODE_MAJOR_VERSION" -lt 18 ]; then
         log_error "Node.js version $NODE_VERSION is not supported"
         log_error "Minimum required version: 18.0.0"
-        log_error "Recommended version: 22.16.0 LTS"
+        log_error "Recommended version: the current 22.x LTS release (see https://nodejs.org/en/about/previous-releases)"
         log_error "Current version: $NODE_VERSION"
         exit 1
     fi
@@ -90,7 +91,7 @@ check_prerequisites() {
     log_success "Node.js version $NODE_VERSION detected (minimum v18.0.0 required)"
     
     # Check for npm package manager availability
-    # Technical Specification requirement: npm >= 8.0.0 (Target: 11.4.1+)
+    # package.json requirement: npm >= 8.0.0 (bundled with Node.js; validated on 11.18.0)
     if ! command -v npm &> /dev/null; then
         log_error "npm package manager is not installed or not in PATH"
         log_error "npm should be bundled with Node.js installation"
@@ -167,7 +168,7 @@ install_dependencies() {
     log_info "Installing dependencies from package.json specification"
     
     # Navigate to backend source directory for dependency installation
-    # This directory contains package.json with Express.js 5.1.0 and related dependencies
+    # This directory contains package.json declaring express ^5.1.0 and related dependencies
     cd "$BACKEND_DIR" || {
         log_error "Failed to change directory to: $BACKEND_DIR"
         log_error "Please verify backend source directory exists and is accessible"
@@ -185,7 +186,7 @@ install_dependencies() {
     
     # Execute npm install command to download and install dependencies
     # Installs production dependencies: express ^5.1.0, dotenv ^16.3.1
-    # Installs development dependencies: nodemon ^3.0.0, supertest 7.1.1
+    # Installs development dependencies: jest 30.4.2, nodemon ^3.0.0, supertest 7.1.1
     log_info "Executing: npm install"
     log_info "This may take several minutes depending on network speed..."
     
@@ -368,7 +369,16 @@ echo "==========================================================================
 
 log_info "Setup Summary:"
 log_info "  ✓ System prerequisites verified (Node.js, npm, Docker)"
-log_info "  ✓ Backend dependencies installed (Express.js 5.1.0 + related packages)"
+
+# Report the Express version that was actually installed instead of a hard-coded
+# literal. package.json declares a range (^5.1.0) and npm resolves it to whatever
+# patch package-lock.json pins, so reading both back keeps this line true for every
+# run rather than only for the release it was written against. Both reads fall back
+# to a plain description if they fail, because `set -e` is active and a summary line
+# must never be the thing that aborts a successful setup.
+EXPRESS_DECLARED_RANGE=$(node -p "require('${BACKEND_DIR}/package.json').dependencies.express" 2>/dev/null || echo "the declared range")
+EXPRESS_RESOLVED_VERSION=$(node -p "require('${BACKEND_DIR}/node_modules/express/package.json').version" 2>/dev/null || echo "not detected")
+log_info "  ✓ Backend dependencies installed (Express ${EXPRESS_DECLARED_RANGE} resolved to ${EXPRESS_RESOLVED_VERSION} + related packages)"
 log_info "  ✓ Docker image built ($DOCKER_IMAGE_NAME:$DOCKER_IMAGE_TAG)"
 log_info "  ✓ Environment ready for development and testing"
 
