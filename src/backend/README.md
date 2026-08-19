@@ -45,13 +45,11 @@ Before you begin, ensure you have the following installed:
 ### Version Verification
 
 ```bash
-# Verify Node.js installation
 node --version
-# Expected output: v22.16.0 or higher
 
-# Verify npm installation  
 npm --version
-# Expected output: 11.4.1 or higher
+# This tutorial is validated on Node v22.23.2 with npm 11.18.0. package.json accepts any
+# Node >= 18.0.0 and npm >= 8.0.0, so an older 22.x or an 18/20 LTS also runs it.
 ```
 
 ## Installation
@@ -59,30 +57,26 @@ npm --version
 ### 1. Repository Setup
 
 ```bash
-# Clone the repository
 git clone <repository-url>
 
-# Navigate to the backend directory
 cd src/backend
 ```
 
 ### 2. Dependency Installation
 
 ```bash
-# Install production dependencies
+# While package-lock.json satisfies the ranges in package.json this installs those exact
+# versions; on a mismatch it resolves new ones and rewrites the lockfile. `npm ci` is the
+# frozen alternative - it fails on a mismatch and writes to neither file.
 npm install
 
-# Dependencies installed:
-# - express@^5.1.0 (Web application framework)
-# - Additional dependencies as specified in package.json
 ```
 
 ### 3. Installation Verification
 
 ```bash
-# Verify installation success
 npm list --depth=0
-# Should show installed packages without errors
+# Five top-level packages: express and dotenv, plus jest, nodemon and supertest as devDependencies
 ```
 
 ## Running the Application
@@ -94,7 +88,6 @@ The server can be run in two distinct modes optimized for different use cases:
 Development mode uses `nodemon` for automatic server restart when file changes are detected, enabling rapid development and testing cycles.
 
 ```bash
-# Start development server with auto-reload
 npm run dev
 ```
 
@@ -128,18 +121,18 @@ lines again.
 - **Prefixed Logging**: because `NODE_ENV` is `development`, the logger prefixes its output with
   `[INFO]:` and `[ERROR]:`, and `config/index.js` prints the configuration summary above. The
   log content itself is identical in every environment
-- **Error Reporting**: an error forwarded to the error handler is logged server-side with its
-  `code` and class name when those are ones the middleware lists, the module name plus line and
-  column of its top frames, and how many headers and parameters the request carried — never
-  which ones, and never its message; the client receives the same generic 500 envelope in every
-  environment
+- **Error Reporting**: an error forwarded to the error handler is logged server-side in full —
+  its message, stack and name, together with the request URL, method, headers, params and query,
+  an ISO timestamp, the User-Agent and the client address. Treat that entry as sensitive: it
+  reproduces whatever the failing request carried, headers and query string included. The client
+  receives the same generic four-field 500 envelope in every environment, whose `path` field
+  echoes the request target it sent
 
 ### Production Mode
 
 Production mode runs the server using the standard `node` runtime without additional development tooling.
 
 ```bash
-# Start production server
 npm start
 
 ```
@@ -168,7 +161,7 @@ the version actually installed.
 - **No Watcher**: the process is plain `node server.js`, so no file watching or restart logic runs
 - **Unprefixed Logging**: the same two log levels, without the development prefixes
 - **Error Handling**: generic 500 responses that disclose no error detail, message or stack, in
-  every environment
+  every environment; the envelope's `path` still echoes the request target the caller sent
 - **No Extra Machinery**: this tutorial adds no clustering, caching, compression or metrics, so
   "production mode" means only the environment value and the presentation change described above
 
@@ -204,13 +197,10 @@ Returns a simple "Hello world" message demonstrating basic HTTP endpoint functio
 **Example Requests:**
 
 ```bash
-# Using curl
 curl http://localhost:3000/hello
 
-# Using wget
 wget -qO- http://localhost:3000/hello
 
-# Using HTTPie
 http GET localhost:3000/hello
 ```
 
@@ -269,8 +259,8 @@ src/backend/
 - **`routes/hello.js`**: Implementation of the `/hello` endpoint with proper error handling
 
 **Middleware Components:**
-- **`errorHandler.js`**: Centralized error handling using Express 5's enhanced promise support. Logs one diagnostic entry per forwarded error and answers the client with a generic 500 envelope. The entry records the shape of the request, not its content, and admits a value only by membership of a list written in the module rather than by its shape — a regular expression describes what a value looks like, and an opaque token can be made to look like anything. It records an entry **count** for the headers, query and route parameters (no name and no value from any of them), a route classification in place of the request target, the client address reduced to its network portion, the error's `code` when it is one of the codes the module lists, its class name when it is a built-in error, the stack reduced to at most five module names with their line and column, and the User-Agent as present or absent. The client address is the one value derived rather than selected: it is reduced to its network portion only after Node's own parser confirms it is an address, and omitted whole when it is not. The error's free-form message is never recorded
-- **`requestLogger.js`**: Logs each request once on arrival, before routing: the method when HTTP defines it, a classification of the request target — the route asked for or `[unmatched]`, with `?[REDACTED]` appended when a query was present — and the body. The target is classified rather than logged because a secret needs no label and no query string to be in a URL, and capping one does not redact it. It never reads or writes the response, so there is no response, status-code or timing log
+- **`errorHandler.js`**: Centralized error handling using Express 5's enhanced promise support. Writes one diagnostic entry per forwarded error — the error's message, stack and name together with the request URL, method, headers, params and query, an ISO timestamp, the User-Agent and the client address — and answers the client with a generic 500 envelope of four fields (`error`, `status`, `timestamp`, `path`) — where `path` is `req.originalUrl || req.url`, so it echoes the caller's own target including any query string. It never calls `next()`: it is the terminal middleware, so the detail stays in the server log and only the generic envelope reaches the client
+- **`requestLogger.js`**: Logs each request once on arrival, before routing: the method (`req.method`), the path (`req.originalUrl`) and the body. Object bodies are serialized with `JSON.stringify`, primitive bodies are converted with `String`, and a request with no body — the normal `GET /hello` case — is logged as `{}`. It never reads or writes the response, so there is no response, status-code or timing log
 
 **Support Modules:**
 - **`config/index.js`**: Environment-based configuration management
@@ -359,11 +349,11 @@ read by nothing. In particular there is **no** log-level setting: `logger.js` ex
 ### Configuration Examples
 
 ```bash
-# Development configuration (matches the committed .env)
+# What the committed .env already sets
 export NODE_ENV=development
 export PORT=3000
 
-# Production configuration
+# Any value other than 'development' drops the log prefixes and the configuration summary
 export NODE_ENV=production
 export PORT=8080
 ```
@@ -373,22 +363,21 @@ export PORT=8080
 ### What Is Implemented
 
 - **One log line per request**, written on arrival by `requestLogger` before routing:
-  `[INFO]: HTTP Request - Method: GET Path: /hello Body: {}`. The path is a **classification**,
-  not the target: the route that was asked for, or `[unmatched]`, plus `?[REDACTED]` when a query
-  was present. A request for `/A3F9K2QXOPAQUE1234567890` is logged as `Path: [unmatched]`
-- **One diagnostic entry per forwarded error**, written by `errorHandler`: an entry count for the
-  headers, query and route parameters, the same route classification, a validated network-only
-  client address (`[omitted]` when the value is not an address), the error's `code` when it is one
-  the middleware lists, its class name when it is a built-in error, at most five stack frames
-  reduced to a module name with its line and column, and the User-Agent recorded only as present
-  (`[omitted]`) or absent. The error's own message is never logged, and no header, query or
-  parameter name or value is
+  `[INFO]: HTTP Request - Method: GET Path: /hello Body: {}`. It carries three values and no
+  more — the method, the path as `req.originalUrl` received it, and the body. A request that
+  matches no route is logged in exactly the same way, because the logger runs before routing
+  and has no idea yet whether a route will match
+- **One diagnostic entry per forwarded error**, written by `errorHandler`: the error's message,
+  stack and name, the request URL, method, headers, params and query, an ISO timestamp, the
+  User-Agent and the client address (`req.ip`, or the connection's remote address when Express
+  resolved none). The client gets a separate four-field 500 envelope, and the split between the
+  two is field-by-field rather than wholesale. Omitted from the envelope: the message, stack and
+  name, the method, the headers, the params, the query, the User-Agent and the client address —
+  and `error` is always the fixed string `Internal Server Error`. Present in it: `status`, a
+  `timestamp`, and `path`, which repeats `req.originalUrl || req.url` with the query string
+  included, so the caller is handed back the target it sent. `path` is the only request data the
+  response echoes
 - **Five startup lines** and, in development only, a six-line configuration summary
-- **Values that cannot grow**: every value the error diagnostic records is a member of a list
-  written in the middleware, an integer, a fixed marker, or a validated address network of at most
-  16 characters, so nothing needs truncating. The
-  request logger truncates only the body and its serialization-failure reason at 200 characters,
-  marked with `...[truncated]`; its method and path are drawn from fixed vocabularies
 
 ### What Is Not Implemented
 
@@ -416,13 +405,10 @@ The figures below are manual-measurement targets, not values the application rep
 ### Running Tests
 
 ```bash
-# Run all tests
 npm test
 
-# Run tests with coverage
 npm run test:coverage
 
-# Run tests in watch mode
 npm run test:watch
 ```
 
@@ -430,10 +416,8 @@ npm run test:watch
 
 **Basic Functionality Test:**
 ```bash
-# Test hello endpoint
 curl -i http://localhost:3000/hello
 
-# Expected response:
 # HTTP/1.1 200 OK
 # Content-Type: text/html; charset=utf-8
 # 
@@ -442,10 +426,8 @@ curl -i http://localhost:3000/hello
 
 **Error Handling Test:**
 ```bash
-# Test 404 response
 curl -i http://localhost:3000/nonexistent
 
-# Expected response:
 # HTTP/1.1 404 Not Found
 ```
 
@@ -453,21 +435,63 @@ curl -i http://localhost:3000/nonexistent
 
 ### Current Security Implementation
 
-- **Input Validation**: Basic HTTP request validation
-- **Error Handling**: Secure error responses without information disclosure
+- **Input Validation**: None at the application level. Nothing here parses or validates a body,
+  query string or parameter, and no body parser is mounted, so `req.body` is always `undefined`.
+  What rejects a malformed request is Node's own HTTP parser, before any middleware runs
+- **Error Handling**: An error forwarded to `errorHandler` produces a four-field 500 envelope.
+  Field by field: `error` is always the fixed string `Internal Server Error`, so the failure's own
+  message, stack and name never reach the client, and neither do the method, headers, params,
+  query, User-Agent or client address; `status` and a `timestamp` are returned; and `path` repeats
+  `req.originalUrl || req.url`, query string included, which is the one piece of the request the
+  response hands back
 - **Dependencies**: Regular security updates using `npm audit`
 - **Transport**: HTTP only (suitable for local development)
+
+### Known Limitations of the Tutorial Middleware
+
+`requestLogger` and `errorHandler` are deliberately minimal teaching code. Read this before
+copying either of them anywhere real.
+
+- **The request log records the target verbatim.** `requestLogger` logs `req.originalUrl`, so a
+  credential a client puts in a query string — `/hello?access_token=…` — reaches the console even
+  though the route ignores it. Log `req.path` or a fixed route label instead
+- **Neither module encodes what it logs.** Values go to `console` as-is, with no escaping of ANSI,
+  C0/C1, `U+2028`/`U+2029` or bidirectional controls, so a value carrying them can distort how a
+  log line is displayed. Reachability differs between the two modules, so treat them separately.
+  The request log is safe as things stand: it records `req.originalUrl`, which keeps percent-encoding
+  intact — `%1B` stays those three characters and never becomes `ESC` — a raw CR/LF in a request
+  target is rejected `400` by Node's HTTP parser before any middleware runs, and no body parser
+  exists to populate `req.body`. The error diagnostic is not safe: it logs `req.query`, and Express's
+  query parser percent-*decodes*, so `?x=%E2%80%AE` arrives as a genuine `U+202E` and reaches the
+  console verbatim — the same applies to the headers and User-Agent it logs. That path needs an
+  application error to be forwarded, and nothing in this tutorial raises one, so it is latent rather
+  than open. Add the encoding before you add either a body parser or a route that can fail
+- **The error diagnostic is written in full.** `errorHandler` logs the error's message, stack and
+  name together with every request header (`Authorization` and `Cookie` among them), the params,
+  the query values, the User-Agent and the client address, so one failing request can put
+  credentials and personal data in the log. Record counts or omission markers rather than values,
+  and mask the address
+- **A body would be serialized whole.** `requestLogger` calls `JSON.stringify` on an object body
+  and `String` on a primitive one, with no size limit. That is latent rather than active here
+  because no parser populates `req.body`, but it becomes both an exposure and an unbounded cost
+  the moment one is added
+- **The client-address fallback is not null-safe.** `req.ip || req.connection.remoteAddress` throws
+  a `TypeError` when Express resolved no `ip` *and* `req.connection` is absent, ending the request
+  with no response at all instead of the generic 500. Real Express requests always supply one of
+  the two, and `tests/unit/errorHandler.test.js` pins the behaviour so it is visible rather than
+  latent. `req.connection` is also deprecated in favour of `req.socket`
+
+These are properties of this tutorial's middleware, not patterns to imitate.
 
 ### Security Best Practices
 
 ```bash
-# Check for security vulnerabilities
 npm audit
 
-# Fix automatically fixable vulnerabilities
 npm audit fix
 
-# Review security advisories
+# Exit non-zero only when a moderate-or-higher vulnerability is present.
+# The report itself is not filtered: every finding is still printed.
 npm audit --audit-level=moderate
 ```
 
@@ -513,7 +537,9 @@ npm start
 
 **Turn on the development log prefixes and the configuration summary:**
 ```bash
-# NODE_ENV is the only variable that changes logging behaviour
+# NODE_ENV=development is what turns on both the [INFO]:/[ERROR]: prefixes and the startup
+# configuration summary; any other value leaves both off. ENABLE_LOGGING=false then silences
+# the summary while leaving the prefixes on, so the summary needs both. LOG_LEVEL is not read.
 export NODE_ENV=development
 npm run dev
 ```
@@ -524,9 +550,8 @@ volume of application logging is fixed. To see more than the one line per reques
 
 **Node.js Inspector:**
 ```bash
-# Start with debugging enabled
 node --inspect server.js
-# Open chrome://inspect in browser
+# Then open chrome://inspect in the browser to attach
 ```
 
 ## Contributing
@@ -553,7 +578,6 @@ node --inspect server.js
 ### Local Development Deployment
 
 ```bash
-# Standard development deployment
 npm run dev
 ```
 
@@ -574,7 +598,6 @@ CMD ["npm", "start"]
 
 **Process Management:**
 ```bash
-# Using PM2 for production
 npm install -g pm2
 pm2 start server.js --name "hello-api"
 ```

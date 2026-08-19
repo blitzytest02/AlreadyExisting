@@ -159,7 +159,7 @@ This project follows strict coding standards to ensure code quality, maintainabi
 - **Express.js 5.1.0**: Leverage the latest features including automatic promise rejection handling
 - **Middleware**: Use Express middleware patterns for request processing
 - **Route Organization**: Keep routes simple and focused for educational clarity
-- **Security**: Follow security best practices using Helmet.js and input validation
+- **Security**: This tutorial deliberately ships no security middleware. Helmet, CORS, rate limiting, authentication and input-validation layers are none of them dependencies here, so do not write guidance or code that assumes one is present — propose adding one as its own change rather than folding it into an unrelated pull request
 
 ### Performance Considerations
 
@@ -188,27 +188,33 @@ All contributions must include appropriate testing:
 ### Running Tests
 
 ```bash
-# Run all tests
 npm test
 
-# Run tests with coverage
 npm run test:coverage
 
-# Run tests in watch mode during development
 npm run test:watch
 ```
 
 ## Security Guidelines
 
-Security is important even in tutorial applications:
+Security is important even in tutorial applications. The list below is what to aim for in code you
+contribute. It is not a description of what this project already does — `src/backend/README.md`
+records the shipped middleware's known limitations, and the two middleware modules are frozen by
+the current plan, so do not change them to satisfy an item here without that scope being agreed
+first.
 
 ### Security Practices
 
-- **Input Validation**: Validate all inputs, even for simple endpoints
-- **Error Handling**: Never expose sensitive information in error messages
+- **Input Validation**: Validate all inputs, even for simple endpoints. Nothing in this project
+  validates input today, and no body parser is mounted, so there is no existing pattern to copy
+- **Error Handling**: Never expose sensitive information in error messages. Note that the shipped
+  500 envelope does return the request's own path, query string included
 - **Dependencies**: Keep dependencies updated and run `npm audit` regularly
-- **Headers**: Use Helmet.js for security headers
-- **Logging**: Log security events appropriately
+- **Headers**: Add security headers deliberately if you need them; no header middleware is a
+  dependency here, and the only header behaviour the app sets is `x-powered-by` being disabled
+- **Logging**: Log security events appropriately, and log the minimum that makes them useful — the
+  shipped request log records the target verbatim and the shipped error diagnostic records the
+  request in full
 
 ### Vulnerability Reporting
 

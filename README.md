@@ -13,7 +13,7 @@ This application is built to provide a hands-on, practical example for understan
 - **Production-Ready Architecture**: Demonstrates enterprise-grade development patterns
 - **Comprehensive Documentation**: Extensive guides for setup, deployment, and contribution
 - **Container Support**: Docker and Kubernetes configurations included
-- **Security Best Practices**: Implements modern security standards and patterns
+- **Deliberately Minimal Security Surface**: `x-powered-by` is disabled; beyond that no security-header, CORS, rate-limiting, authentication or input-validation middleware is installed, and transport is plain HTTP. `src/backend/README.md` records the known limitations of the logging and error middleware
 
 ### 🛠 Built With
 
@@ -27,7 +27,7 @@ This application is built to provide a hands-on, practical example for understan
 - **Express Version**: 5.1.0 with automatic promise rejection handling
 - **Platform Support**: Cross-platform compatibility (Windows, macOS, Linux)
 - **Performance Target**: Response time < 100ms, Memory usage < 50MB
-- **Security**: Implements ReDoS attack mitigation and modern security headers
+- **Security**: `x-powered-by` disabled — the only security control the application configures. No security headers, CORS, rate limiting, authentication, input validation or ReDoS mitigation is implemented; hardening is out of scope for this tutorial
 
 ## 🚀 Getting Started
 
@@ -115,13 +115,12 @@ Navigate to `http://localhost:3000/hello` in your web browser to see the "Hello 
 
 **Command Line Testing:**
 ```bash
-# Basic request
 curl http://localhost:3000/hello
 
-# With detailed headers
 curl -i http://localhost:3000/hello
 
-# Expected response: Hello world
+# Both response bodies are exactly `Hello world`, 11 bytes with no trailing newline;
+# the -i form prints the status line and headers above it
 ```
 
 **Expected Console Output:**
@@ -206,7 +205,7 @@ src/backend/
 - **Routing**: Express Router with modular organization
 - **Middleware**: Request logging and error handling
 - **Configuration**: Environment-based configuration management
-- **Logging**: A thin wrapper over `console` with exactly two levels — `info` (stdout) and `error` (stderr). There is no log-level setting, no automatic timestamping, no response or timing log and no metrics: `NODE_ENV=development` adds the `[INFO]:` and `[ERROR]:` prefixes, and every other environment forwards the arguments to `console` unchanged. Request logging records three values — method, path and body. The path is a classification rather than the request target: the route that was asked for, or `[unmatched]`, plus `?[REDACTED]` when a query was present, so no token in a URL can end up in the log whether or not it sits in the query. The error handler's diagnostic is shaped field by field, and admits a value only by membership of a list written in the middleware rather than by its shape: headers, query and route parameters contribute an entry **count** and nothing else, the error contributes a listed `code` and a built-in class name rather than its message, the stack becomes at most five module names with their line and column, the User-Agent is recorded only as present or absent, and the client address is validated as an address before being reduced to its network portion (anything that is not one is omitted whole) — see the [Architecture Overview](./docs/architecture/overview.md) for the exact contract
+- **Logging**: A thin wrapper over `console` with exactly two levels — `info` (stdout) and `error` (stderr). There is no log-level setting, no automatic timestamping, no response or timing log and no metrics: `NODE_ENV=development` adds the `[INFO]:` and `[ERROR]:` prefixes, and every other environment forwards the arguments to `console` unchanged. Request logging records three values — the method (`req.method`), the path (`req.originalUrl`) and the body — as one line per request written on arrival, before routing. The error handler writes one diagnostic entry per forwarded error, carrying the error's message, stack and name alongside the request URL, method, headers, params and query, an ISO timestamp, the User-Agent and the client address. The client's four-field envelope overlaps that only in part: the message, stack, name, method, headers, params, query, User-Agent and address are all omitted and `error` is always the fixed string `Internal Server Error`, while `status`, a `timestamp` and `path` — which echoes the request target the caller sent, query string included — are returned. See the [Architecture Overview](./docs/architecture/overview.md) for the exact contract
 
 For a detailed explanation of the system architecture, design patterns, and component interactions, please see the [Architecture Overview](./docs/architecture/overview.md).
 
@@ -221,13 +220,10 @@ While this project is primarily intended for local educational use, it includes 
 The image is built from the repository root, because the Dockerfile copies the package with `COPY src/backend/...` paths. Leave the backend directory used by the earlier steps first:
 
 ```bash
-# From the repository root
 cd /path/to/repository-root
 
-# Build Docker image
 docker build -t nodejs-tutorial-app -f infrastructure/docker/Dockerfile .
 
-# Run container
 docker run -p 3000:3000 nodejs-tutorial-app
 ```
 
@@ -235,10 +231,8 @@ docker run -p 3000:3000 nodejs-tutorial-app
 
 **Deploy to Kubernetes:**
 ```bash
-# Apply all manifests
 kubectl apply -f infrastructure/kubernetes/
 
-# Check deployment status
 kubectl get all -n tutorial-app
 ```
 
@@ -257,13 +251,10 @@ For detailed deployment instructions including Docker configurations, Kubernetes
 The application includes comprehensive testing configurations:
 
 ```bash
-# Run tests
 npm test
 
-# Run tests with coverage
 npm run test:coverage
 
-# Development mode with watch
 npm run test:watch
 ```
 
@@ -299,7 +290,7 @@ code actually consults:
 # Read and used by the running application
 PORT=3000                  # port the HTTP server binds (default 3000)
 NODE_ENV=development       # selects the logger's [INFO]:/[ERROR]: prefixes and the config summary
-APP_NAME=node-tutorial-app # shown in the startup summary; startup fails if it is empty
+APP_NAME=node-tutorial-app # shown in the startup summary; empty or absent falls back to node-tutorial-app
 HOST=localhost             # shown in the startup summary
 ENABLE_LOGGING=true        # set to 'false' to silence the configuration summary
 

@@ -4,7 +4,7 @@
   "ignore": [
     "tests/",
     "node_modules/",
+    "coverage/",
     "package-lock.json"
-  ],
-  "exec": "node server.js"
+  ]
 }

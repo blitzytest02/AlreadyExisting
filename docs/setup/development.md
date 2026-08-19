@@ -29,7 +29,7 @@ Before you begin, ensure you have the following software installed on your syste
 **Installation Verification:**
 ```bash
 node --version
-# Should display: v22.16.0 or higher
+# Should display: v22.23.2 - the exact runtime this tutorial is validated against
 ```
 
 **Download Location**: [https://nodejs.org/](https://nodejs.org/)
@@ -48,7 +48,7 @@ node --version
 **Installation Verification:**
 ```bash
 npm --version
-# Should display: 11.4.1 or higher
+# Should display: 11.18.0 - the exact npm this tutorial is validated against
 ```
 
 **Package Manager Details:**
@@ -64,7 +64,6 @@ npm --version
 **Installation Verification:**
 ```bash
 git --version
-# Should display git version information
 ```
 
 ### 1.2 Optional Components
@@ -78,7 +77,6 @@ git --version
 ```bash
 docker --version
 docker info
-# Should display Docker version and running daemon status
 ```
 
 **Docker Benefits:**
@@ -121,10 +119,8 @@ Follow these comprehensive steps to clone the repository and install all necessa
 Open your terminal and execute the following commands to clone the project repository:
 
 ```bash
-# Clone the repository (replace <repository-url> with actual URL)
 git clone <repository-url>
 
-# Navigate to the project directory (replace <project-directory> with actual name)
 cd <project-directory>
 ```
 
@@ -133,13 +129,10 @@ cd <project-directory>
 Confirm that the project structure is correctly cloned:
 
 ```bash
-# Display project structure
 ls -la
 
-# Verify backend directory exists
 ls -la src/backend/
 
-# Confirm key files are present
 ls -la src/backend/package.json
 ls -la src/backend/.env.example
 ls -la src/backend/server.js
@@ -212,16 +205,12 @@ npm install
 
 **Installation Verification:**
 ```bash
-# Verify node_modules directory creation
 ls -la node_modules/
 
-# Check installed package versions
 npm list --depth=0
 
-# Verify Express.js installation
 npm list express
 
-# Check for security vulnerabilities
 npm audit
 ```
 
@@ -240,13 +229,10 @@ nodejs-tutorial-app-backend@1.0.0
 After installation, perform a security audit to ensure all dependencies are secure:
 
 ```bash
-# Run security audit
 npm audit
 
-# Fix any automatically resolvable vulnerabilities
 npm audit fix
 
-# Review audit report for manual fixes
 npm audit --audit-level=moderate
 ```
 
@@ -261,10 +247,8 @@ The application uses environment variables for configuration management. This se
 Create your local environment configuration by copying the example file:
 
 ```bash
-# Ensure you're in the backend directory
 cd src/backend
 
-# Copy the environment template
 cp .env.example .env
 ```
 
@@ -274,18 +258,10 @@ The `.env.example` file contains comprehensive configuration templates:
 
 **Server Configuration:**
 ```env
-# PORT - HTTP server listening port
-# Technical specification default: 3000 (F-001-RQ-003)
-# Valid range: 1024-65535
 PORT=3000
 
-# NODE_ENV - Application environment
-# Values: development, test, production
 NODE_ENV=development
 
-# HOST - Server binding address
-# Default: localhost (local development)
-# Docker: 0.0.0.0 (container access)
 HOST=localhost
 ```
 
@@ -297,8 +273,6 @@ exposes exactly two levels, `info` and `error`, in every environment with no fil
 them. Changing this value has no effect on what the application logs.
 
 ```env
-# LOG_LEVEL - placeholder for a later tutorial; read by no code today
-# The logger has two fixed levels (info, error) and no level filter
 LOG_LEVEL=info
 ```
 
@@ -322,10 +296,9 @@ PORT=3000
 If port 3000 is already in use, configure an alternative port:
 
 ```env
-# Alternative development ports
-PORT=3001  # Common alternative
-PORT=8000  # Web development alternative
-PORT=8080  # Another common alternative
+PORT=3001
+PORT=8000
+PORT=8080
 ```
 
 #### Port Conflict Resolution
@@ -333,10 +306,8 @@ PORT=8080  # Another common alternative
 Check for port conflicts before starting the server:
 
 ```bash
-# Check if port 3000 is in use (Linux/macOS)
 lsof -i :3000
 
-# Check if port 3000 is in use (Windows)
 netstat -ano | findstr :3000
 ```
 
@@ -347,8 +318,7 @@ If the port belongs to a server you started, stop it with `Ctrl+C` in its own te
 lsof -i :3000 -sTCP:LISTEN     # note the PID and command
 kill <PID>                     # graceful SIGTERM
 
-# Windows: confirm the PID from the netstat output above, then
-# taskkill /PID <PID>
+# Windows: confirm the PID from the netstat output above, then signal that PID only
 ```
 
 ### 3.3 Environment Validation
@@ -356,10 +326,13 @@ kill <PID>                     # graceful SIGTERM
 Verify your environment configuration:
 
 ```bash
-# Display current environment variables
+# WARNING: this prints the file in full - every value, not just the names. Anything in .env
+# ends up in your terminal scrollback, your shell's session transcript and any log or CI
+# job output that captures the terminal. Run it only on a .env you know holds no real
+# credential. To see just the names, read the keys instead of the file:
+#   grep -oE '^[A-Za-z_][A-Za-z0-9_]*' .env
 cat .env
 
-# Validate environment file syntax
 node -e "require('dotenv').config(); console.log('Environment loaded successfully');"
 ```
 
@@ -374,10 +347,8 @@ The Node.js tutorial application provides multiple execution modes for different
 Run the application using the production-like execution mode:
 
 ```bash
-# Ensure you're in the backend directory
 cd src/backend
 
-# Start the server using npm start script
 npm start
 ```
 
@@ -420,7 +391,6 @@ configuration summary and without the `[INFO]:` prefix. The Node.js version come
 For active development, use the development mode with automatic restart:
 
 ```bash
-# Start development server with nodemon
 npm run dev
 ```
 
@@ -446,10 +416,8 @@ running the test suite does not trigger a restart.
 You can also run the application directly with Node.js:
 
 ```bash
-# Direct Node.js execution
 node server.js
 
-# With environment variables
 NODE_ENV=development PORT=3000 node server.js
 ```
 
@@ -504,16 +472,12 @@ Hello world
 Test the endpoint using curl for programmatic verification:
 
 ```bash
-# Basic GET request to hello endpoint
 curl http://localhost:3000/hello
 
-# Expected response
 Hello world
 
-# Detailed curl with headers
 curl -v http://localhost:3000/hello
 
-# Expected detailed output includes:
 # > GET /hello HTTP/1.1
 # > Host: localhost:3000
 # < HTTP/1.1 200 OK
@@ -525,19 +489,15 @@ curl -v http://localhost:3000/hello
 
 **Using wget:**
 ```bash
-# Download response to stdout
 wget -qO- http://localhost:3000/hello
 
-# Save response to file
 wget -O response.txt http://localhost:3000/hello
 ```
 
 **Using HTTPie (if installed):**
 ```bash
-# Clean HTTP client
 http GET localhost:3000/hello
 
-# Expected output:
 # HTTP/1.1 200 OK
 # Content-Type: text/html; charset=utf-8
 # Hello world
@@ -550,10 +510,8 @@ http GET localhost:3000/hello
 Verify the server process is running correctly:
 
 ```bash
-# Check Node.js processes
 ps aux | grep node
 
-# Check port binding
 netstat -tulpn | grep 3000  # Linux
 netstat -an | grep 3000     # macOS
 netstat -an | findstr 3000  # Windows
@@ -564,10 +522,8 @@ netstat -an | findstr 3000  # Windows
 Test server response performance:
 
 ```bash
-# Measure response time
 time curl http://localhost:3000/hello
 
-# Multiple requests for consistency
 for i in {1..10}; do
   curl -w "Response time: %{time_total}s\n" -o /dev/null -s http://localhost:3000/hello
 done
@@ -585,16 +541,14 @@ done
 Test error handling by accessing non-existent endpoints:
 
 ```bash
-# Test 404 response
 curl -i http://localhost:3000/nonexistent
 
-# Expected response:
 # HTTP/1.1 404 Not Found
 # Content-Type: text/html; charset=utf-8
 # Unmatched paths are handled by Express's built-in 404 handler, which returns
 # its default HTML error page containing: <pre>Cannot GET /nonexistent</pre>
 
-# Test different HTTP methods on hello endpoint (each one returns 404)
+# Only GET is registered, so each of these matches no handler and gets the same 404 - never a 405
 curl -X POST http://localhost:3000/hello
 curl -X PUT http://localhost:3000/hello
 curl -X DELETE http://localhost:3000/hello
@@ -611,17 +565,17 @@ Verify proper logging functionality:
 [INFO]: HTTP Request - Method: GET Path: /hello Body: {}
 ```
 
-**Unmatched Path Request Log:**
+**Unmatched Path Request Log** (`curl http://localhost:3000/nonexistent`)**:**
 ```
-[INFO]: HTTP Request - Method: GET Path: [unmatched] Body: {}
-```
-
-**Request Carrying a Query String** (`curl "http://localhost:3000/hello?access_token=s3cr3t"`)**:**
-```
-[INFO]: HTTP Request - Method: GET Path: /hello?[REDACTED] Body: {}
+[INFO]: HTTP Request - Method: GET Path: /nonexistent Body: {}
 ```
 
-The request logger runs before routing, so every request produces exactly one line like the samples above: method, path and body only, with no status code, response time, client IP or user agent. The path is a classification rather than the target you sent — the route that was asked for, `[unmatched]` when the target names no route, and `?[REDACTED]` appended when a query was present. Anything a client puts in a URL is client-supplied and would otherwise copy access tokens, passwords or e-mail addresses straight into the console, and that is as true of a path segment as of a query value, so neither is logged. This is why `GET /nonexistent` above reports `[unmatched]` rather than the path you requested. The `[INFO]:` prefix is added only when `NODE_ENV` is `development`; other environments log the same message without it. An unmatched path is logged in exactly the same way and is then answered by Express's built-in 404 handler, so no additional log line follows.
+**Request Carrying a Query String** (`curl "http://localhost:3000/hello?greeting=world"`)**:**
+```
+[INFO]: HTTP Request - Method: GET Path: /hello?greeting=world Body: {}
+```
+
+The request logger runs before routing, so every request produces exactly one line like the samples above: method, path and body only, with no status code, response time, client IP or user agent. The path is `req.originalUrl` exactly as the client sent it — an unmatched target and a query string both appear verbatim, which is worth knowing before you put anything sensitive in a URL. The body is `{}` for any request without one, and that is every request here because no body parser is mounted. The `[INFO]:` prefix is added only when `NODE_ENV` is `development`; other environments log the same message without it. An unmatched path is logged in exactly the same way and is then answered by Express's built-in 404 handler, so no additional log line follows.
 
 ## 6. Automated Setup
 
@@ -647,13 +601,10 @@ The automated setup script (`infrastructure/scripts/setup.sh`) provides:
 #### Running the Automated Setup
 
 ```bash
-# Ensure you're in the project root directory
 cd /path/to/project-root
 
-# Make script executable (if needed)
 chmod +x infrastructure/scripts/setup.sh
 
-# Execute the automated setup script
 ./infrastructure/scripts/setup.sh
 ```
 
@@ -715,13 +666,10 @@ chmod +x infrastructure/scripts/setup.sh
 After successful script execution, verify the setup:
 
 ```bash
-# Verify dependencies installation
 cd src/backend && npm list --depth=0
 
-# Verify Docker image creation
 docker images nodejs-tutorial-app:latest
 
-# Test application startup
 npm start
 ```
 
@@ -730,13 +678,10 @@ npm start
 Test the Docker image created by the script. Start the container in the background so the same terminal can issue the request, then stop it again:
 
 ```bash
-# Run containerized application in the background
 docker run --rm -d --name nodejs-tutorial-app -p 3000:3000 nodejs-tutorial-app:latest
 
-# Test containerized endpoint
 curl http://localhost:3000/hello
 
-# Stop the container when finished
 docker stop nodejs-tutorial-app
 ```
 
@@ -748,24 +693,19 @@ To watch the container's log output instead, run `docker run --rm -p 3000:3000 n
 
 **Permission Denied:**
 ```bash
-# Fix script permissions
 chmod +x infrastructure/scripts/setup.sh
 ```
 
 **Docker Not Running:**
 ```bash
-# Start Docker daemon (Linux)
 sudo systemctl start docker
 
-# On macOS/Windows, start Docker Desktop application
 ```
 
 **Network Issues During npm Install:**
 ```bash
-# Configure npm registry
 npm config set registry https://registry.npmjs.org/
 
-# Clear npm cache
 npm cache clean --force
 ```
 
@@ -778,16 +718,12 @@ Establish an efficient development workflow for building and testing the Node.js
 #### Starting Development Session
 
 ```bash
-# 1. Navigate to project directory
 cd /path/to/project-root
 
-# 2. Pull latest changes (if working with team)
 git pull origin main
 
-# 3. Install any new dependencies
 cd src/backend && npm install
 
-# 4. Start development server
 npm run dev
 ```
 
@@ -807,28 +743,23 @@ npm run dev
   request and startup lines carry none - the error diagnostic and the shutdown line each record
   one explicitly in the text they log. There is no response or status-code log, no request
   duration and no metrics — the request logger never touches the response object
-- The path is classified rather than logged — the route asked for, or `[unmatched]`, with
-  `?[REDACTED]` appended when a query was present — so a token or an e-mail address placed
-  anywhere in a URL is not written to the console, query string or not. The method is recorded
-  only when HTTP defines it. The body and the fixed serialization-failure reason are limited to
-  200 characters including the `...[truncated]` marker, with newlines collapsed so no value can
-  forge a second entry. Nothing is scanned for credentials: classification is what keeps
-  client-supplied values out of the request log, because capping a secret does not redact it
+- The path is `req.originalUrl` exactly as the client sent it, query string included, and the
+  method is `req.method`. The body is serialized with `JSON.stringify` when it is an object,
+  converted with `String` when it is a primitive, and reported as `{}` when there is none —
+  which is every request in this tutorial, since no body parser is mounted. Whatever a client
+  puts in the URL therefore appears in the console, so keep credentials out of request targets
+  when you extend this project
 - The `[INFO]:`/`[ERROR]:` prefixes, and the configuration summary printed at startup, appear
   because `NODE_ENV` is `development`
-- An error forwarded to the error handler produces one diagnostic entry built from lists, counts
-  and fixed markers rather than from filters. Nothing free-form is kept, and nothing is admitted
-  on the strength of its shape either — no pattern can recognise an opaque token, and
-  `/^[A-Z][A-Z0-9_]+$/` admits `A3F9K2QXOPAQUE1234567890` as readily as `ENOENT`. So: the headers,
-  query and route parameters are recorded as an entry **count** only (neither a name nor a value
-  from any of them can appear, `Authorization` and `Cookie` included), the request target is
-  classified exactly as above, the client address is checked with Node's own parser and either
-  reduced to its network portion (`203.0.113.24` → `203.0.113.x`) or omitted whole when it is not
-  an address, the error contributes its `code` when it is one the middleware lists and its class
-  name when it is a built-in error — never its message — the stack becomes at most five module
-  names with their line and column (or `[external]`), and the User-Agent is recorded only as
-  present or absent. The client receives only the generic 500 envelope.
-  `docs/architecture/overview.md` states the field-by-field contract
+- An error forwarded to the error handler produces one diagnostic entry recording the error's
+  message, stack and name together with the request URL, method, headers, params and query, an
+  ISO timestamp, the User-Agent and the client address. Most of that stays server-side, but not
+  all of it, so take the envelope field by field rather than assuming it is generic. Omitted from
+  the client entirely: the message, stack and name, the method, the headers, the params, the
+  query, the User-Agent and the client address — and `error` is always the fixed string
+  `Internal Server Error`. Returned to the client: `status`, a `timestamp`, and `path`, which
+  repeats `req.originalUrl || req.url` with the query string included, so the caller gets back
+  the target it sent. `docs/architecture/overview.md` states the field-by-field contract
 
 ### 7.2 Code Editing and Testing
 
@@ -856,16 +787,12 @@ Nodemon monitors these file types by default:
 #### Manual Testing Workflow
 
 ```bash
-# Terminal 1: Run development server
 npm run dev
 
-# Terminal 2: Test endpoints
 curl http://localhost:3000/hello
 
-# Test error conditions
 curl http://localhost:3000/nonexistent
 
-# Performance testing
 time curl http://localhost:3000/hello
 ```
 
@@ -874,14 +801,12 @@ time curl http://localhost:3000/hello
 For more comprehensive testing:
 
 ```bash
-# Run the Jest test suite (unit and integration tests)
 npm test
 
 # Run the suite with a coverage report; Jest enforces the configured
 # 90% thresholds for routes/**/*.js and middleware/**/*.js
 npm run test:coverage
 
-# Watch mode for continuous testing
 npm run test:watch
 ```
 
@@ -892,7 +817,6 @@ npm run test:watch
 Leverage built-in console logging:
 
 ```javascript
-// Add debug logging in your code
 console.log('Debug: Request received:', req.method, req.path);
 console.log('Debug: Response data:', responseData);
 ```
@@ -902,20 +826,15 @@ console.log('Debug: Response data:', responseData);
 Use Node.js built-in debugger:
 
 ```bash
-# Start server with debugger
 node --inspect server.js
 
-# Connect with Chrome DevTools
-# Open chrome://inspect in Chrome browser
 ```
 
 #### Environment-Specific Debugging
 
 ```bash
-# Debug mode with enhanced logging
 DEBUG=* npm run dev
 
-# Specific module debugging
 DEBUG=express:* npm run dev
 ```
 
@@ -931,7 +850,6 @@ Comprehensive troubleshooting guide for common development environment issues.
 
 **Diagnosis:**
 ```bash
-# Check what's using port 3000
 lsof -i :3000          # Linux/macOS
 netstat -ano | findstr :3000  # Windows
 ```
@@ -956,16 +874,13 @@ netstat -ano | findstr :3000  # Windows
 
 2. **Use Alternative Port:**
    ```bash
-   # Start on different port
    PORT=3001 npm start
    
-   # Or modify .env file
    echo "PORT=3001" > .env
    ```
 
 3. **Pick Another Free Port:**
    ```bash
-   # Any unused port above 1023 works
    PORT=8080 npm start
    ```
    `PORT=0` does not produce an OS-assigned port here: `config/index.js` resolves the
@@ -981,7 +896,6 @@ netstat -ano | findstr :3000  # Windows
 # Use sudo (not recommended for development)
 sudo npm start
 
-# Better: Use non-privileged port
 PORT=3000 npm start  # Port 3000 doesn't require sudo
 ```
 
@@ -992,20 +906,14 @@ PORT=3000 npm start  # Port 3000 doesn't require sudo
 **Diagnosis:**
 ```bash
 node --version
-# If shows v16.x.x or lower, upgrade needed
 ```
 
 **Solution:**
 ```bash
-# Install Node.js v22.16.0 LTS
-# Visit https://nodejs.org/ for installer
-# Or use Node Version Manager (nvm)
 
-# Using nvm (Linux/macOS)
 nvm install 22.16.0
 nvm use 22.16.0
 
-# Using nvm-windows
 nvm install 22.16.0
 nvm use 22.16.0
 ```
@@ -1023,7 +931,6 @@ nvm use 22.16.0
    npm config get registry
    # Should return: https://registry.npmjs.org/
    
-   # Reset to default if needed
    npm config set registry https://registry.npmjs.org/
    ```
 
@@ -1035,7 +942,6 @@ nvm use 22.16.0
 
 3. **Retry Against the Official Registry:**
    ```bash
-   # Confirm the registry, then retry the reproducible install
    npm config get registry        # expect https://registry.npmjs.org/
    npm ci
    ```
@@ -1053,11 +959,9 @@ nvm use 22.16.0
 
 **Diagnosis:**
 ```bash
-# Check available disk space
 df -h .                    # Linux/macOS
 dir                        # Windows
 
-# Check node_modules size
 du -sh node_modules        # Linux/macOS
 ```
 
@@ -1097,10 +1001,8 @@ du -sh node_modules        # Linux/macOS
 
 **Diagnosis:**
 ```bash
-# Verify node_modules exists
 ls -la node_modules/
 
-# Check if express is installed
 npm list express
 ```
 
@@ -1127,13 +1029,13 @@ npm list express
 
 **Diagnosis:**
 ```bash
-# Check if .env file exists
 ls -la .env
 
-# Verify content
+# WARNING: prints every value, exactly as in section 3.3. If you only need to confirm which
+# keys are present, list the names instead:
+#   grep -oE '^[A-Za-z_][A-Za-z0-9_]*' .env
 cat .env
 
-# Test environment loading
 node -e "require('dotenv').config(); console.log(process.env.PORT);"
 ```
 
@@ -1145,9 +1047,12 @@ node -e "require('dotenv').config(); console.log(process.env.PORT);"
 
 2. **Fix .env Syntax:**
    ```bash
-   # Ensure no spaces around =
-   PORT=3000          # Correct
-   PORT = 3000        # Incorrect
+   # dotenv needs a separator it recognises: '=', or ':' followed by a space. Surrounding
+   # spaces are allowed, so both lines below set PORT to 3000. Forms it does NOT accept are
+   # a colon with no space (PORT:3000), no separator at all (PORT 3000), and a space inside
+   # the key (MY PORT=3000) - those lines are ignored entirely.
+   PORT=3000          # parsed
+   PORT = 3000        # also parsed
    ```
 
 ### 8.4 Performance Issues
@@ -1158,10 +1063,8 @@ node -e "require('dotenv').config(); console.log(process.env.PORT);"
 
 **Diagnosis:**
 ```bash
-# Measure response time
 time curl http://localhost:3000/hello
 
-# Check server resource usage
 top | grep node
 ps aux | grep node
 ```
@@ -1175,13 +1078,11 @@ ps aux | grep node
 
 2. **Restart Development Server:**
    ```bash
-   # Stop server (Ctrl+C) and restart
    npm run dev
    ```
 
 3. **Clear Application Cache:**
    ```bash
-   # Clear npm cache
    npm cache clean --force
    ```
    Then restart this server only: press `Ctrl+C` in the terminal that started it and run
@@ -1202,12 +1103,9 @@ ps aux | grep node
 
 **Diagnosis:**
 ```bash
-# Monitor memory usage
 ps -o pid,vsz,rss,comm -p $(pgrep node)
 
-# Use Node.js memory profiling
 node --inspect server.js
-# Connect to Chrome DevTools Memory tab
 ```
 
 **Solutions:**
@@ -1223,13 +1121,10 @@ node --inspect server.js
 
 **Diagnosis:**
 ```bash
-# Check Docker daemon status
 docker info
 
-# Verify Dockerfile exists
 ls -la infrastructure/docker/Dockerfile
 
-# Check build context
 ls -la .
 ```
 
@@ -1237,21 +1132,17 @@ ls -la .
 
 1. **Start Docker Daemon:**
    ```bash
-   # Linux
    sudo systemctl start docker
    
-   # macOS/Windows: Start Docker Desktop
    ```
 
 2. **Free Disk Space:**
    ```bash
-   # Check available space first
    df -h
 
    # Remove only dangling (untagged) images
    docker image prune
 
-   # Remove the tutorial image itself when it is no longer needed
    docker image rm nodejs-tutorial-app:latest
    ```
    ⚠️ Avoid `docker system prune -a` here. It deletes every image not used by a running
@@ -1263,7 +1154,6 @@ ls -la .
 
 3. **Network Issues:**
    ```bash
-   # Test Docker Hub connectivity
    docker pull node:22-alpine
    ```
 
@@ -1273,13 +1163,10 @@ ls -la .
 
 **Diagnosis:**
 ```bash
-# Check running containers
 docker ps
 
-# View container logs
 docker logs <container_id>
 
-# Inspect container
 docker inspect <container_id>
 ```
 
@@ -1287,13 +1174,11 @@ docker inspect <container_id>
 
 1. **Port Mapping:**
    ```bash
-   # Ensure correct port mapping
    docker run -p 3000:3000 nodejs-tutorial-app:latest
    ```
 
 2. **Container Health:**
    ```bash
-   # Check container health
    docker exec -it <container_id> sh
    curl localhost:3000/hello
    ```
@@ -1317,7 +1202,6 @@ environments.
 Create environment-specific configuration files:
 
 ```bash
-# Create environment-specific files
 cp .env.example .env.development
 cp .env.example .env.test
 cp .env.example .env.production
@@ -1326,17 +1210,14 @@ cp .env.example .env.production
 **Environment File Organization:**
 
 ```env
-# .env.development
 NODE_ENV=development
 PORT=3000
 HOST=localhost
 
-# .env.test
 NODE_ENV=test
 PORT=3001
 HOST=localhost
 
-# .env.production
 NODE_ENV=production
 PORT=80
 HOST=0.0.0.0
@@ -1353,7 +1234,6 @@ optional Winston enhancement in section 9.3 below.
 #### Dynamic Environment Loading
 
 ```javascript
-// config/environment.js
 const path = require('path');
 require('dotenv').config({
   path: path.join(__dirname, `../.env.${process.env.NODE_ENV || 'development'}`)
@@ -1411,14 +1291,12 @@ worked example of what you would add if you wanted structured logging — includ
 `LOG_LEVEL` variable, which only starts doing something once a logger that reads it exists:
 
 ```bash
-# Install Winston logging library
 npm install winston winston-daily-rotate-file
 ```
 
 **Logging Configuration Example:**
 
 ```javascript
-// utils/logger.js enhancement
 const winston = require('winston');
 const DailyRotateFile = require('winston-daily-rotate-file');
 
@@ -1453,26 +1331,22 @@ const logger = winston.createLogger({
 Install and configure Helmet.js for security headers:
 
 ```bash
-# Install security middleware
 npm install helmet cors rate-limiter-flexible
 ```
 
 **Security Configuration:**
 
 ```javascript
-// middleware/security.js
 const helmet = require('helmet');
 const cors = require('cors');
 const { RateLimiterMemory } = require('rate-limiter-flexible');
 
-// Rate limiting configuration
 const rateLimiter = new RateLimiterMemory({
   keyProp: 'ip',
-  points: 100, // Number of requests
-  duration: 60, // Per 60 seconds
+  points: 100,
+  duration: 60,
 });
 
-// CORS configuration
 const corsOptions = {
   origin: process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:3000'],
   credentials: true,
@@ -1508,17 +1382,14 @@ wanted application performance monitoring; installing them is a decision you are
 the tutorial, not a setup step it requires:
 
 ```bash
-# Install APM and monitoring tools (only if you are adding this yourself)
 npm install clinic newrelic @newrelic/native-metrics
 ```
 
 **Performance Monitoring Setup (example code to write yourself — no such file exists):**
 
 ```javascript
-// monitoring/performance.js
 const clinic = require('clinic');
 
-// Performance profiling for development
 if (process.env.NODE_ENV === 'development' && process.env.ENABLE_PROFILING) {
   clinic.start({
     tool: 'doctor',
@@ -1526,13 +1397,11 @@ if (process.env.NODE_ENV === 'development' && process.env.ENABLE_PROFILING) {
   });
 }
 
-// Memory usage monitoring
 const monitorMemory = () => {
   const usage = process.memoryUsage();
   console.log(`Memory Usage: RSS=${Math.round(usage.rss / 1024 / 1024)}MB, Heap=${Math.round(usage.heapUsed / 1024 / 1024)}MB`);
 };
 
-// Monitor memory every 30 seconds in development
 if (process.env.NODE_ENV === 'development') {
   setInterval(monitorMemory, 30000);
 }
@@ -1545,7 +1414,6 @@ if (process.env.NODE_ENV === 'development') {
 Prepare for future database integration:
 
 ```env
-# Database configuration (future use)
 DATABASE_URL=postgresql://user:password@localhost:5432/tutorial_db
 REDIS_URL=redis://localhost:6379
 MONGODB_URI=mongodb://localhost:27017/tutorial_db
@@ -1554,7 +1422,6 @@ MONGODB_URI=mongodb://localhost:27017/tutorial_db
 **Database Configuration Module:**
 
 ```javascript
-// config/database.js (for future use)
 const fs = require('fs');
 
 const config = {
@@ -1601,11 +1468,9 @@ After successfully setting up your development environment, consider these next 
 Extend the application with additional endpoints:
 
 ```javascript
-// routes/api.js (future enhancement)
 const express = require('express');
 const router = express.Router();
 
-// Health check endpoint
 router.get('/health', (req, res) => {
   res.json({
     status: 'OK',
@@ -1615,7 +1480,6 @@ router.get('/health', (req, res) => {
   });
 });
 
-// Version endpoint
 router.get('/version', (req, res) => {
   const packageJson = require('../package.json');
   res.json({
@@ -1634,7 +1498,6 @@ module.exports = router;
 Add input validation middleware:
 
 ```bash
-# Install validation libraries
 npm install joi express-validator helmet
 ```
 
@@ -1646,10 +1509,8 @@ are devDependencies of `src/backend`, `npm test` runs the suite, and `jest.confi
 cases, not tooling:
 
 ```bash
-# Run what exists first
 npm test
 
-# Then add cases under tests/unit or tests/integration and re-run
 npm run test:coverage
 ```
 
@@ -1664,18 +1525,15 @@ to the features this section proposes adding (session handling, JWT authenticati
 level-aware logger) and have no effect until that code exists:
 
 ```env
-# .env.production
 NODE_ENV=production
 PORT=80
 HOST=0.0.0.0
 
-# Settings for the proposed enhancements below (inert today)
 LOG_LEVEL=warn
 SESSION_SECRET=your-secure-session-secret
 JWT_SECRET=your-jwt-secret
 ALLOWED_ORIGINS=https://yourdomain.com
 
-# Database settings (when needed)
 DATABASE_URL=your-production-database-url
 REDIS_URL=your-production-redis-url
 ```
@@ -1685,7 +1543,6 @@ REDIS_URL=your-production-redis-url
 Create production Dockerfile optimizations:
 
 ```dockerfile
-# Dockerfile.production
 FROM node:22-alpine AS production
 
 WORKDIR /app
@@ -1703,7 +1560,6 @@ CMD ["node", "src/backend/server.js"]
 Prepare for continuous integration:
 
 ```yaml
-# .github/workflows/ci.yml
 name: CI/CD Pipeline
 on: [push, pull_request]
 

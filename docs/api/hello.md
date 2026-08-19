@@ -201,10 +201,14 @@ This endpoint demonstrates:
 
 ## Security Considerations
 
-- **Input Validation:** Not applicable (no user input accepted)
+- **Input Validation:** Not applicable to the response — the handler reads nothing from the request
+  and returns the same 11 bytes regardless of what is sent. It is not true that the request is
+  ignored entirely, though: `requestLogger` runs first and writes the target verbatim, so a query
+  string appended to `/hello` is recorded even though the endpoint disregards it
 - **Authentication:** None required (tutorial endpoint)
 - **Authorization:** No access restrictions
-- **Data Exposure:** Only static text response, no sensitive data
+- **Data Exposure:** The response body is a static string and exposes nothing about the server. What
+  leaves the process is the log line described above
 - **Rate Limiting:** Not implemented (tutorial scope)
 
 ---
@@ -222,13 +226,10 @@ This endpoint demonstrates:
 
 ### Validation Commands
 ```bash
-# Test server accessibility
 curl -I http://localhost:3000/hello
 
-# Verify response content
 curl -s http://localhost:3000/hello | grep "Hello world"
 
-# Test method restriction
 curl -X POST http://localhost:3000/hello
 ```
 
