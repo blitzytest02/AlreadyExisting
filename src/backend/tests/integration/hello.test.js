@@ -502,12 +502,12 @@ describe('Route Equivalence Contract', () => {
 /**
  * Method Semantics Contract
  *
- * One handler is registered - GET on the mounted /hello route - and what a client gets for every
- * other method follows from that single registration rather than from any method handling this
- * project wrote. Four documents state those answers (README.md, docs/api/hello.md,
- * docs/architecture/overview.md and routes/hello.js's own header), and until these cases existed
- * nothing executable owned any of it: the behaviour could have changed under the documentation
- * without a single test failing.
+ * One route handler is registered - GET on the mounted /hello route - and no method-specific
+ * handler stands beside it, so what a client gets for every other method follows from that single
+ * registration plus the framework's own defaults. Four documents state those answers (README.md,
+ * docs/api/hello.md, docs/architecture/overview.md and routes/hello.js's own header), and until
+ * these cases existed nothing executable owned any of it: the behaviour could have changed under
+ * the documentation without a single test failing.
  *
  * The container health check is a consumer of this path but not of the HEAD case specifically. Its
  * `wget --no-verbose --tries=1 --spider` was run against the image's own BusyBox 1.37.0 and issues
@@ -517,9 +517,11 @@ describe('Route Equivalence Contract', () => {
  * What the framework does, and why:
  *
  *   HEAD /hello    - 200 with the headers the GET would carry, including Content-Length: 11, and
- *                    no body. Express routes HEAD to the registered GET handler rather than to a
- *                    handler of its own: that handler runs and frames the response, and Node drops
- *                    the body on the way out.
+ *                    no body. The router dispatches HEAD to the registered GET handler rather than
+ *                    to a handler of its own, so that handler runs and res.send() computes the
+ *                    GET-equivalent headers; res.send then sees req.method === 'HEAD' and ends the
+ *                    response without the body chunk, so Express suppresses the body itself rather
+ *                    than handing it to Node (express 5.2.1, lib/response.js).
  *   OPTIONS /hello - 200 with `Allow: GET, HEAD`, built by the router from the methods the route
  *                    registers. There is no CORS middleware here; the header is the router
  *                    describing itself.
@@ -527,10 +529,14 @@ describe('Route Equivalence Contract', () => {
  *                    for a path that does not exist. This application contains no method gate and
  *                    answers 405 nowhere; asserting the 404 is what keeps that true.
  *
- * No handler is added for any method here, and ownership below is not uniform: HEAD is served by
- * the registered GET handler, OPTIONS and the unmatched-method 404s never reach application code at
- * all, and the closing GET case is the application handler itself. These cases record that as it
- * stands rather than asking for anything new.
+ * No handler is added for any method here, and the layers each case exercises are not the same.
+ * Every request below passes through requestLogger, which app.js mounts ahead of the router, so all
+ * of them - the OPTIONS and unmatched-method cases included - are logged by application code before
+ * routing. What differs is how much further each one travels: HEAD reaches the registered GET
+ * handler, OPTIONS is answered by the router itself and the unmatched methods by Express's default
+ * final handler without any application route handler running, and the closing GET case is that
+ * handler answering normally. These cases record all of that as it stands rather than asking for
+ * anything new.
  */
 describe('Method Semantics Contract', () => {
     beforeAll((done) => {
