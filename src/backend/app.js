@@ -101,6 +101,15 @@ app.disable('x-powered-by');
  * Stage 1 - logging ahead of the router, so it reflects traffic rather than success: a request
  * that later 404s or fails is already recorded. On a GET `req.body` is undefined and the logger
  * reports `Body: {}` via its no-body branch - not a reason to configure request body parsing.
+ *
+ * What this registration records is the method, a classification of the request path, and the
+ * body. The path is classified rather than logged - the route that was asked for, or
+ * `[unmatched]`, with `?[REDACTED]` appended when a query was present - because every request
+ * reaching this line is client-controlled, and mounting a logger decides what a client can get
+ * written into console output. A target carrying `?access_token=...`, or carrying an opaque token
+ * as a path segment with no query string at all, would otherwise be copied verbatim into the log,
+ * which is the exposure CWE-532 describes. Note that bounding such a target would not have helped:
+ * a truncated secret is still a secret.
  */
 app.use(requestLogger);
 
@@ -130,6 +139,21 @@ app.use('/', routes);
  * It receives errors passed to next(err), thrown synchronously in a handler, or produced by a
  * rejected promise, which Express 5 forwards automatically. A request matching no route is not
  * an error and never arrives here - Express answers it with its own 404, as the suite asserts.
+ *
+ * The diagnostic this registration activates records the shape of the failing request rather
+ * than its content. Nothing free-form is retained - neither on the strength of having been
+ * scanned nor on the strength of its shape, because no pattern recognises an opaque token or an
+ * arbitrary piece of personal data, and a shape test cannot tell a secret from an identifier.
+ * Every recorded value is a member of a list written in that middleware, an integer, or a fixed
+ * marker: headers, query and route parameters are recorded as entry counts alone, so neither a
+ * name nor a value from any of them - Authorization, Cookie, X-API-Key or anything a future
+ * client invents - can be logged; the error contributes a listed `code` and a built-in class
+ * name, never its message; the stack becomes at most five module names with their line and
+ * column; the User-Agent is recorded only as present or absent; and the request target is
+ * classified, not copied. The one value derived rather than selected is the client address,
+ * which keeps its network portion only after Node's parser has confirmed it is an address, and
+ * is otherwise omitted. The client still
+ * receives only the generic four-field 500 envelope.
  */
 app.use(errorHandler);
 

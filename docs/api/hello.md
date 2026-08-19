@@ -162,7 +162,7 @@ router.get('/', (req, res) => {
 ## Integration Notes
 
 ### Server Mounting
-This endpoint router is mounted in the main application at the `/hello` path, making the final accessible URL `GET /hello` when the server runs on the default port 3000.
+The public route is assembled in two hops: `app.js` mounts the route aggregator at `/`; `routes/index.js` mounts `helloRouter` at `/hello`; and `routes/hello.js` registers `GET /`, producing the public route `GET /hello`. With the server on the default port 3000, the accessible URL is therefore `http://localhost:3000/hello`.
 
 ### Dependencies
 - Requires HTTP server initialization (Feature F-001)
@@ -185,7 +185,7 @@ This endpoint demonstrates:
 - Verify 200 status code response
 - Confirm exact "Hello world" response text
 - Validate Content-Type header setting
-- Test GET method exclusive support
+- Validate registered `GET /hello`, Express-generated `HEAD /hello` and `OPTIONS /hello`, and 404 responses for POST, PUT, PATCH, DELETE, and TRACE
 
 ### Performance Testing
 - Response time should be under 100ms

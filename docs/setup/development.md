@@ -228,8 +228,8 @@ npm audit
 **Expected Output:**
 ```
 nodejs-tutorial-app-backend@1.0.0
-├── express@5.2.1
 ├── dotenv@16.6.1
+├── express@5.2.1
 ├── jest@30.4.2
 ├── nodemon@3.1.14
 └── supertest@7.1.1
@@ -290,12 +290,22 @@ HOST=localhost
 ```
 
 **Logging Configuration:**
+
+`.env.example` also carries a `LOG_LEVEL` entry, and it is worth knowing before you set it that
+**no code reads it**: `config/index.js` defines no log-level setting, and `utils/logger.js`
+exposes exactly two levels, `info` and `error`, in every environment with no filtering between
+them. Changing this value has no effect on what the application logs.
+
 ```env
-# LOG_LEVEL - Application logging verbosity
-# Values: error, warn, info, debug
-# Default: info (appropriate for tutorial)
+# LOG_LEVEL - placeholder for a later tutorial; read by no code today
+# The logger has two fixed levels (info, error) and no level filter
 LOG_LEVEL=info
 ```
+
+The one variable that does change logging is `NODE_ENV`: set to `development` it adds the
+`[INFO]:` and `[ERROR]:` prefixes and makes `config/index.js` print its configuration summary;
+any other value leaves both out. The same variables apply as listed above — `PORT`, `NODE_ENV`,
+`HOST`, plus `APP_NAME` and `ENABLE_LOGGING`.
 
 ### 3.2 Port Configuration
 
@@ -328,12 +338,17 @@ lsof -i :3000
 
 # Check if port 3000 is in use (Windows)
 netstat -ano | findstr :3000
+```
 
-# Kill process using port 3000 (if needed)
-# Linux/macOS:
-lsof -ti:3000 | xargs kill -9
-# Windows:
-# taskkill /PID <PID> /F
+If the port belongs to a server you started, stop it with `Ctrl+C` in its own terminal. If that terminal is gone, identify the owning process first and then ask it to shut down gracefully:
+
+```bash
+# Linux/macOS: confirm which process owns the port, then signal that PID only
+lsof -i :3000 -sTCP:LISTEN     # note the PID and command
+kill <PID>                     # graceful SIGTERM
+
+# Windows: confirm the PID from the netstat output above, then
+# taskkill /PID <PID>
 ```
 
 ### 3.3 Environment Validation
@@ -367,13 +382,30 @@ npm start
 ```
 
 **Expected Console Output:**
+
+With the committed `.env` in place (`NODE_ENV=development`), `npm start` prints eleven lines:
+six from `config/index.js` while it loads the configuration, then five from the server once the
+port is bound. The `[INFO]:` prefix on the server lines is added by the logger in development
+only.
+
 ```
-🚀 HTTP Server successfully started and listening on port 3000
-🌐 Server is ready to accept HTTP requests
-📍 Local development URL: http://localhost:3000
-⚡ Node.js v22.23.2 | Express 5.2.1 | Environment: development
-🎯 Tutorial application initialized successfully
+📊 Configuration loaded successfully:
+   🚀 App Name: nodejs-tutorial-hello-world
+   🌐 Host: localhost
+   📡 Port: 3000
+   🔧 Environment: development
+   📝 Logging: enabled
+[INFO]: 🚀 HTTP Server successfully started and listening on port 3000
+[INFO]: 🌐 Server is ready to accept HTTP requests
+[INFO]: 📍 Local development URL: http://localhost:3000
+[INFO]: ⚡ Node.js v22.16.0 | Express 5.1.0 | Environment: development
+[INFO]: 🎯 Tutorial application initialized successfully
 ```
+
+Running `NODE_ENV=production npm start` prints only the five server lines, without the
+configuration summary and without the `[INFO]:` prefix. The Node.js version comes from
+`process.version`; the `Express 5.1.0` token is a fixed string in `server.js`, so use
+`npm ls express` to see the version actually installed.
 
 **Process Details:**
 - Executes `server.js` directly using Node.js
@@ -396,12 +428,16 @@ npm run dev
 - Automatic server restart on file changes
 - Enhanced development productivity
 - Real-time code change testing
-- Detailed console output for debugging
+- The same console output as `npm start`, preceded by nodemon's own five-line banner
 
-**Monitored File Types:**
+**Monitored File Types** (`src/backend/nodemon.json`, `"ext": "js,json"`)**:**
 - `.js` files (JavaScript source)
 - `.json` files (Configuration files)
-- `.env` files (Environment variables)
+
+`.env` is **not** watched, so a change to it takes effect only after you restart the process
+yourself — type `rs` at the nodemon prompt or stop and start it again. `nodemon.json` ignores
+`tests/`, `node_modules/` and `package-lock.json`, and nodemon ignores `coverage/` by default, so
+running the test suite does not trigger a restart.
 
 ### 4.3 Direct Node.js Execution
 
@@ -434,7 +470,8 @@ Look for these indicators of successful server startup:
 ```
 ❌ Server startup failed: Port 3000 is already in use
 💡 Resolution suggestions:
-   • Stop the process using port 3000: lsof -ti:3000 | xargs kill -9
+   • Stop the process using port 3000: press Ctrl+C in its terminal, or
+     find its PID with `lsof -i :3000 -sTCP:LISTEN` and run `kill <PID>`
    • Use a different port: PORT=3001 npm start
    • Check for other running instances of this application
 ```
@@ -576,10 +613,15 @@ Verify proper logging functionality:
 
 **Unmatched Path Request Log:**
 ```
-[INFO]: HTTP Request - Method: GET Path: /nonexistent Body: {}
+[INFO]: HTTP Request - Method: GET Path: [unmatched] Body: {}
 ```
 
-The request logger runs before routing, so every request produces exactly one line like the samples above: method, path and body only, with no status code, response time, client IP or user agent. The `[INFO]:` prefix is added only when `NODE_ENV` is `development`; other environments log the same message without it. An unmatched path is logged in exactly the same way and is then answered by Express's built-in 404 handler, so no additional log line follows.
+**Request Carrying a Query String** (`curl "http://localhost:3000/hello?access_token=s3cr3t"`)**:**
+```
+[INFO]: HTTP Request - Method: GET Path: /hello?[REDACTED] Body: {}
+```
+
+The request logger runs before routing, so every request produces exactly one line like the samples above: method, path and body only, with no status code, response time, client IP or user agent. The path is a classification rather than the target you sent — the route that was asked for, `[unmatched]` when the target names no route, and `?[REDACTED]` appended when a query was present. Anything a client puts in a URL is client-supplied and would otherwise copy access tokens, passwords or e-mail addresses straight into the console, and that is as true of a path segment as of a query value, so neither is logged. This is why `GET /nonexistent` above reports `[unmatched]` rather than the path you requested. The `[INFO]:` prefix is added only when `NODE_ENV` is `development`; other environments log the same message without it. An unmatched path is logged in exactly the same way and is then answered by Express's built-in 404 handler, so no additional log line follows.
 
 ## 6. Automated Setup
 
@@ -685,15 +727,20 @@ npm start
 
 #### Container Testing
 
-Test the Docker image created by the script:
+Test the Docker image created by the script. Start the container in the background so the same terminal can issue the request, then stop it again:
 
 ```bash
-# Run containerized application
-docker run -p 3000:3000 nodejs-tutorial-app:latest
+# Run containerized application in the background
+docker run --rm -d --name nodejs-tutorial-app -p 3000:3000 nodejs-tutorial-app:latest
 
 # Test containerized endpoint
 curl http://localhost:3000/hello
+
+# Stop the container when finished
+docker stop nodejs-tutorial-app
 ```
+
+To watch the container's log output instead, run `docker run --rm -p 3000:3000 nodejs-tutorial-app:latest` in the foreground and send the `curl` request from a second terminal.
 
 ### 6.5 Script Troubleshooting
 
@@ -747,16 +794,41 @@ npm run dev
 #### Development Server Features
 
 **Auto-Reload Capability:**
-- Watches for file changes in `.js`, `.json`, `.env` files
-- Automatically restarts server on changes
+- Watches `.js` and `.json` files under `src/backend`, ignoring `tests/`, `node_modules/` and
+  `package-lock.json` (`coverage/` is ignored by nodemon's own defaults, and `.env` is not
+  watched — restart the process to pick it up)
+- Automatically restarts the server on changes
 - Maintains console history and logs
 - Preserves environment variables across restarts
 
 **Development Logging:**
-- Enhanced console output with timestamps
-- Request/response logging for debugging
-- Error stack traces for development troubleshooting
-- Performance metrics for optimization
+- One console line per request, written on arrival before routing:
+  `[INFO]: HTTP Request - Method: GET Path: /hello Body: {}`. The logger adds no timestamp, so
+  request and startup lines carry none - the error diagnostic and the shutdown line each record
+  one explicitly in the text they log. There is no response or status-code log, no request
+  duration and no metrics — the request logger never touches the response object
+- The path is classified rather than logged — the route asked for, or `[unmatched]`, with
+  `?[REDACTED]` appended when a query was present — so a token or an e-mail address placed
+  anywhere in a URL is not written to the console, query string or not. The method is recorded
+  only when HTTP defines it. The body and the fixed serialization-failure reason are limited to
+  200 characters including the `...[truncated]` marker, with newlines collapsed so no value can
+  forge a second entry. Nothing is scanned for credentials: classification is what keeps
+  client-supplied values out of the request log, because capping a secret does not redact it
+- The `[INFO]:`/`[ERROR]:` prefixes, and the configuration summary printed at startup, appear
+  because `NODE_ENV` is `development`
+- An error forwarded to the error handler produces one diagnostic entry built from lists, counts
+  and fixed markers rather than from filters. Nothing free-form is kept, and nothing is admitted
+  on the strength of its shape either — no pattern can recognise an opaque token, and
+  `/^[A-Z][A-Z0-9_]+$/` admits `A3F9K2QXOPAQUE1234567890` as readily as `ENOENT`. So: the headers,
+  query and route parameters are recorded as an entry **count** only (neither a name nor a value
+  from any of them can appear, `Authorization` and `Cookie` included), the request target is
+  classified exactly as above, the client address is checked with Node's own parser and either
+  reduced to its network portion (`203.0.113.24` → `203.0.113.x`) or omitted whole when it is not
+  an address, the error contributes its `code` when it is one the middleware lists and its class
+  name when it is a built-in error — never its message — the stack becomes at most five module
+  names with their line and column (or `[external]`), and the User-Agent is recorded only as
+  present or absent. The client receives only the generic 500 envelope.
+  `docs/architecture/overview.md` states the field-by-field contract
 
 ### 7.2 Code Editing and Testing
 
@@ -770,12 +842,12 @@ npm run dev
 
 #### File Watching Configuration
 
-The package's `nodemon.json` watches the backend package directory and excludes generated or test-only paths:
+Nodemon monitors these file types by default:
 ```json
 {
-  "watch": ["./"],
-  "ext": "js,json",
-  "ignore": ["tests/", "node_modules/", "coverage/", "package-lock.json"]
+  "ext": "js,json,env",
+  "ignore": ["node_modules/", ".git/"],
+  "delay": "1000ms"
 }
 ```
 
@@ -866,15 +938,21 @@ netstat -ano | findstr :3000  # Windows
 
 **Solutions:**
 
-1. **Kill Conflicting Process:**
+1. **Stop the Conflicting Process:**
+   Prefer `Ctrl+C` in the terminal that owns the process. Otherwise verify which PID holds
+   the port and signal only that PID, so an unrelated process is never terminated:
    ```bash
-   # Find and kill process (Linux/macOS)
-   lsof -ti:3000 | xargs kill -9
+   # Linux/macOS: confirm the owner, then request a graceful shutdown
+   lsof -i :3000 -sTCP:LISTEN     # note the PID and command name
+   kill <PID>                     # SIGTERM; the process can clean up
    
-   # Windows
+   # Windows: confirm the PID, then request a graceful shutdown
    netstat -ano | findstr :3000
-   taskkill /PID <PID> /F
+   taskkill /PID <PID>
    ```
+   Only if the verified PID ignores SIGTERM should you escalate to `kill -9 <PID>`
+   (Windows: `taskkill /PID <PID> /F`). SIGKILL gives the process no chance to clean up,
+   so it is a last resort rather than the first step.
 
 2. **Use Alternative Port:**
    ```bash
@@ -885,11 +963,14 @@ netstat -ano | findstr :3000  # Windows
    echo "PORT=3001" > .env
    ```
 
-3. **Configure Dynamic Port:**
+3. **Pick Another Free Port:**
    ```bash
-   # Use environment variable
-   PORT=0 npm start  # OS assigns available port
+   # Any unused port above 1023 works
+   PORT=8080 npm start
    ```
+   `PORT=0` does not produce an OS-assigned port here: `config/index.js` resolves the
+   port with `parseInt(process.env.PORT, 10) || 3000`, and `0` is falsy, so the server
+   still binds 3000.
 
 #### Permission Errors
 
@@ -952,11 +1033,19 @@ nvm use 22.16.0
    npm install
    ```
 
-3. **Use Alternative Registry:**
+3. **Retry Against the Official Registry:**
    ```bash
-   # Temporary alternative
-   npm install --registry https://registry.npmmirror.com
+   # Confirm the registry, then retry the reproducible install
+   npm config get registry        # expect https://registry.npmjs.org/
+   npm ci
    ```
+   Do not switch to a third-party registry mirror to work around a network error. A
+   mirror changes where every package in the dependency graph comes from, so it is a
+   supply-chain decision that needs your organisation's approval, not a troubleshooting
+   step. If an approved internal mirror exists, use it for a single command only
+   (`npm ci --registry https://<approved-mirror>`) and never persist it with
+   `npm config set`; restore the default with
+   `npm config set registry https://registry.npmjs.org/`.
 
 #### Disk Space Issues
 
@@ -1016,11 +1105,15 @@ npm list express
 ```
 
 **Solutions:**
-1. **Reinstall Dependencies:**
+1. **Reinstall Dependencies From the Lockfile:**
    ```bash
-   rm -rf node_modules package-lock.json
-   npm install
+   rm -rf node_modules
+   npm ci
    ```
+   Keep `package-lock.json`. `npm ci` installs exactly the versions it records, which is
+   what makes the install reproducible; deleting it discards that guarantee. If the lock
+   really is out of step with `package.json`, regenerate it deliberately as its own
+   change (`npm install --package-lock-only`) and commit the result.
 
 2. **Verify Working Directory:**
    ```bash
@@ -1090,10 +1183,18 @@ ps aux | grep node
    ```bash
    # Clear npm cache
    npm cache clean --force
-   
-   # Restart Node.js process
-   pkill node && npm start
    ```
+   Then restart this server only: press `Ctrl+C` in the terminal that started it and run
+   `npm start` again. If that terminal is no longer available, find the process holding
+   the port and signal that single PID:
+   ```bash
+   lsof -i :3000 -sTCP:LISTEN     # note the PID
+   kill <PID>                     # graceful shutdown of that process only
+   npm start
+   ```
+   Never terminate processes by name (for example `pkill node`): that would kill every
+   Node.js process running under your account, including editors, language servers and
+   other applications that have nothing to do with this tutorial.
 
 #### Memory Leaks
 
@@ -1144,12 +1245,21 @@ ls -la .
 
 2. **Free Disk Space:**
    ```bash
-   # Remove unused Docker images
-   docker system prune -a
-   
-   # Check available space
+   # Check available space first
    df -h
+
+   # Remove only dangling (untagged) images
+   docker image prune
+
+   # Remove the tutorial image itself when it is no longer needed
+   docker image rm nodejs-tutorial-app:latest
    ```
+   ⚠️ Avoid `docker system prune -a` here. It deletes every image not used by a running
+   container, plus stopped containers, unused networks and the entire build cache — on a
+   shared machine that removes other projects' images and forces long rebuilds. If you
+   genuinely need it, review what would go first with `docker system df` and
+   `docker image ls`, and run it only when you are certain nothing else on the host
+   depends on those layers.
 
 3. **Network Issues:**
    ```bash
@@ -1190,7 +1300,15 @@ docker inspect <container_id>
 
 ## 9. Advanced Configuration
 
-Advanced configuration options for experienced developers and production-like development environments.
+Advanced configuration options for experienced developers and production-like development
+environments.
+
+> **None of this chapter is part of the tutorial as it stands.** Every package installation and
+> code sample below (§9.2 onwards) describes an enhancement you would be adding yourself: the
+> repository's dependencies are `express` and `dotenv` at runtime plus `jest`, `nodemon` and
+> `supertest` for development, and nothing here — structured logging, security middleware,
+> performance monitoring, database access — is installed or wired up. §9.1 is the exception: it
+> uses only `NODE_ENV`, `PORT` and `HOST`, which the application does read.
 
 ### 9.1 Environment-Specific Configuration
 
@@ -1211,21 +1329,26 @@ cp .env.example .env.production
 # .env.development
 NODE_ENV=development
 PORT=3000
-LOG_LEVEL=debug
 HOST=localhost
 
 # .env.test
 NODE_ENV=test
 PORT=3001
-LOG_LEVEL=error
 HOST=localhost
 
 # .env.production
 NODE_ENV=production
 PORT=80
-LOG_LEVEL=warn
 HOST=0.0.0.0
 ```
+
+`NODE_ENV`, `PORT`, `HOST`, `APP_NAME` and `ENABLE_LOGGING` are the settings this application
+reads and acts on; `config/index.js` also reads `AUTO_RESTART`, `TRUST_PROXY`, `JSON_LIMIT` and
+`URLENCODED_LIMIT` into its configuration object, but no code consumes those four values yet.
+Every other variable in `.env` is inert. Per-environment log levels are deliberately absent from
+these examples: the tutorial's logger has two fixed levels and no filter, so a `LOG_LEVEL` line
+here would look like configuration while doing nothing. It becomes meaningful only alongside the
+optional Winston enhancement in section 9.3 below.
 
 #### Dynamic Environment Loading
 
@@ -1239,44 +1362,53 @@ require('dotenv').config({
 
 ### 9.2 Development Server Customization
 
-#### Nodemon Configuration
+#### Nodemon Custom Configuration
 
-The committed `nodemon.json` is package-relative, so `npm run dev` resolves `server.js` once and watches the backend package:
+Create `nodemon.json` in the backend directory:
 
 ```json
 {
-  "watch": ["./"],
-  "ext": "js,json",
-  "ignore": [
-    "tests/",
-    "node_modules/",
-    "coverage/",
-    "package-lock.json"
-  ]
+  "watch": ["src", "config"],
+  "ext": "js,json,env",
+  "ignore": ["node_modules", "logs", "*.test.js"],
+  "delay": "1000",
+  "env": {
+    "NODE_ENV": "development"
+  },
+  "verbose": true,
+  "restartable": "rs"
 }
 ```
 
-#### Package Scripts
+#### Custom npm Scripts
 
-Use the scripts declared by this package:
+Add development convenience scripts to `package.json`:
 
 ```json
 {
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js",
+    "dev:debug": "nodemon --inspect server.js",
+    "dev:watch": "nodemon --watch src --watch config server.js",
     "test": "jest",
     "test:watch": "jest --watch",
-    "test:coverage": "jest --coverage"
+    "test:coverage": "jest --coverage",
+    "lint": "eslint src/",
+    "lint:fix": "eslint src/ --fix"
   }
 }
 ```
 
 ### 9.3 Logging Configuration
 
-#### Structured Logging Setup
+#### Structured Logging Setup (optional enhancement — not part of this tutorial)
 
-Install and configure Winston for production-ready logging:
+Nothing below is installed or wired up in this repository. The tutorial ships
+`utils/logger.js`, a two-level wrapper over `console` with no levels beyond `info` and `error`,
+no filtering and no automatic timestamping, and `winston` is not a dependency. Treat this subsection as a
+worked example of what you would add if you wanted structured logging — including the
+`LOG_LEVEL` variable, which only starts doing something once a logger that reads it exists:
 
 ```bash
 # Install Winston logging library
@@ -1363,18 +1495,24 @@ module.exports = {
 };
 ```
 
-### 9.5 Performance Monitoring
+### 9.5 Performance Monitoring (optional enhancement — not part of this tutorial)
 
 #### Application Performance Monitoring
 
-Install performance monitoring tools:
+Nothing in this subsection exists in the repository. `clinic`, `newrelic` and
+`@newrelic/native-metrics` are not dependencies, there is no `monitoring/` directory, no
+profiling hook, no memory sampler and no `ENABLE_PROFILING` setting — the application measures
+neither response time nor memory use, and `config/index.js` reads no variable that would switch
+such a thing on. What follows is a worked example of the packages and code you would add if you
+wanted application performance monitoring; installing them is a decision you are taking beyond
+the tutorial, not a setup step it requires:
 
 ```bash
-# Install APM and monitoring tools
+# Install APM and monitoring tools (only if you are adding this yourself)
 npm install clinic newrelic @newrelic/native-metrics
 ```
 
-**Performance Monitoring Setup:**
+**Performance Monitoring Setup (example code to write yourself — no such file exists):**
 
 ```javascript
 // monitoring/performance.js
@@ -1417,6 +1555,8 @@ MONGODB_URI=mongodb://localhost:27017/tutorial_db
 
 ```javascript
 // config/database.js (for future use)
+const fs = require('fs');
+
 const config = {
   development: {
     dialect: 'postgresql',
@@ -1437,7 +1577,11 @@ const config = {
     dialectOptions: {
       ssl: {
         require: true,
-        rejectUnauthorized: false
+        // Verify the server certificate against a trusted CA. Never set this to
+        // false: that accepts any certificate and removes the protection TLS
+        // provides against interception of the database connection.
+        rejectUnauthorized: true,
+        ca: fs.readFileSync(process.env.DB_CA_CERT_PATH).toString()
       }
     }
   }
@@ -1452,9 +1596,38 @@ After successfully setting up your development environment, consider these next 
 
 ### 10.1 Application Enhancement
 
-#### Trace the Existing Endpoint
+#### Add More Endpoints
 
-Follow `GET /hello` from `app.js`, through the route aggregator in `routes/index.js`, to the handler in `routes/hello.js`. The maintained tutorial intentionally stops at this single registered route; any follow-on exercise that expands the route surface should update its tests and documentation together.
+Extend the application with additional endpoints:
+
+```javascript
+// routes/api.js (future enhancement)
+const express = require('express');
+const router = express.Router();
+
+// Health check endpoint
+router.get('/health', (req, res) => {
+  res.json({
+    status: 'OK',
+    uptime: process.uptime(),
+    timestamp: new Date().toISOString(),
+    memory: process.memoryUsage()
+  });
+});
+
+// Version endpoint
+router.get('/version', (req, res) => {
+  const packageJson = require('../package.json');
+  res.json({
+    name: packageJson.name,
+    version: packageJson.version,
+    nodeVersion: process.version,
+    environment: process.env.NODE_ENV
+  });
+});
+
+module.exports = router;
+```
 
 #### Implement Request Validation
 
@@ -1465,29 +1638,39 @@ Add input validation middleware:
 npm install joi express-validator helmet
 ```
 
-#### Add Testing Framework
+#### Extend the Test Suite
 
-Implement comprehensive testing:
+The testing framework is already installed and wired up — `jest@30.4.2` and `supertest@7.1.1`
+are devDependencies of `src/backend`, `npm test` runs the suite, and `jest.config.js` enforces
+90% coverage on `routes/**/*.js` and `middleware/**/*.js`. So this exercise is about adding
+cases, not tooling:
 
 ```bash
-# Install testing dependencies
-npm install --save-dev jest supertest @types/jest
+# Run what exists first
+npm test
+
+# Then add cases under tests/unit or tests/integration and re-run
+npm run test:coverage
 ```
 
 ### 10.2 Production Deployment Preparation
 
 #### Environment Configuration
 
-Create production environment files:
+Create production environment files. As it stands the tutorial reads and acts on `NODE_ENV`,
+`PORT`, `HOST`, `APP_NAME` and `ENABLE_LOGGING`, and reads `AUTO_RESTART`, `TRUST_PROXY`,
+`JSON_LIMIT` and `URLENCODED_LIMIT` without yet consuming them; the remaining entries below belong
+to the features this section proposes adding (session handling, JWT authentication, CORS, a
+level-aware logger) and have no effect until that code exists:
 
 ```env
 # .env.production
 NODE_ENV=production
 PORT=80
-LOG_LEVEL=warn
 HOST=0.0.0.0
 
-# Security settings
+# Settings for the proposed enhancements below (inert today)
+LOG_LEVEL=warn
 SESSION_SECRET=your-secure-session-secret
 JWT_SECRET=your-jwt-secret
 ALLOWED_ORIGINS=https://yourdomain.com

@@ -8,9 +8,11 @@
  * The test suite implements comprehensive integration testing patterns that validate:
  * - HTTP server initialization and startup
  * - Express.js application routing and middleware processing
- * - Endpoint response generation and content delivery
+ * - Endpoint response generation and content delivery, including response framing
  * - Error handling for non-existent routes
  * - Server lifecycle management during testing
+ * - Middleware registration order inside the application composition root
+ * - Absence of import-time side effects in the server module
  * 
  * Testing Architecture:
  * - Jest v29+ as the primary testing framework for test organization and assertions
@@ -234,6 +236,7 @@ describe('Hello API Endpoint', () => {
      * Response Validation Assertions:
      * - HTTP status code verification (200 OK)
      * - Content-Type header validation (text/html)
+     * - Content-Length header validation (exactly 11 bytes, the length of 'Hello world')
      * - Response body content exact match verification
      * - Response timing and performance characteristics
      * 
@@ -272,6 +275,7 @@ describe('Hello API Endpoint', () => {
             .get('/hello')
             .expect(200) // Assert HTTP status code is 200 (OK)
             .expect('Content-Type', /text\/html/) // Assert Content-Type header includes 'text/html'
+            .expect('Content-Length', '11') // Assert the framed body length is exactly 11 bytes
             .expect('Hello world'); // Assert response body text is exactly 'Hello world'
 
         // Additional explicit assertions for comprehensive validation
@@ -286,6 +290,15 @@ describe('Hello API Endpoint', () => {
         // Verify the Content-Type header is set appropriately by Express
         expect(response.headers['content-type']).toMatch(/text\/html/);
         
+        // Verify the Content-Length header frames exactly the 11 bytes of 'Hello world'.
+        // The header is asserted explicitly, and not only inferred from the body text,
+        // because a chunked or re-framed response carrying the right characters would
+        // satisfy every other assertion above while breaking the published contract.
+        // Byte length is measured rather than character length so a multi-byte
+        // character silently introduced into the literal is caught here too.
+        expect(response.headers['content-length']).toBe('11');
+        expect(Buffer.byteLength(response.text, 'utf8')).toBe(11);
+
         // Performance assertion - response should be fast
         // Note: response.duration might not be available in all Supertest versions
         // This demonstrates performance awareness in testing
@@ -410,6 +423,254 @@ describe('Hello API Endpoint', () => {
 });
 
 /**
+ * Application Composition Integration Test Suite
+ *
+ * The suite above proves that the assembled application answers GET /hello correctly.
+ * That is not the same as proving the application is assembled correctly: coverage
+ * measures routes/ and middleware/ only, so src/backend/app.js contributes no coverage
+ * number at all, and a request that returns 'Hello world' does so whether or not the
+ * request logger was ever mounted and whether or not the error handler can be reached.
+ * The three cases below close that gap by asserting the one property app.js owns and
+ * nothing else can: the ORDER of its three registrations.
+ *
+ *     app.use(requestLogger)   ->   app.use('/', routes)   ->   app.use(errorHandler)
+ *
+ * Each registration is proved by an outcome that changes if it moves:
+ * - Mount the logger after the router and it never runs for a matched route, because the
+ *   route handler ends the response and never calls next().
+ * - Mount the error handler before the router and an error forwarded by the router walks
+ *   past it to Express's default handler, so the published 500 envelope disappears.
+ *
+ * Technique (and why it needs no production change): each case re-assembles app.js inside
+ * a sandboxed module registry via jest.isolateModules, with jest.doMock standing test
+ * doubles in for the collaborators app.js requires. The doubles exist only inside that
+ * sandbox for the duration of one case - the real application keeps exactly one registered
+ * route, GET /hello, and no route, alias or method handler is added anywhere.
+ *
+ * The route aggregator is the double that makes the error path reachable at all: the real
+ * application has no failing route to exercise, and adding one purely to be tested would
+ * change the published surface. Standing in for it is what lets a forwarded error be
+ * observed without inventing an endpoint.
+ */
+describe('Application Composition and Middleware Ordering', () => {
+    /**
+     * Discards the doubles registered by a case.
+     *
+     * jest.dontMock removes the explicit mock registrations and jest.resetModules empties
+     * the registry, so the next case re-requires the genuine modules. Jest's clearMocks
+     * setting does not do this - it clears recorded calls, not module registrations - and
+     * without this teardown a double registered here would be served to any later require
+     * in this file.
+     */
+    afterEach(() => {
+        jest.dontMock('../../middleware/requestLogger');
+        jest.dontMock('../../routes');
+        jest.dontMock('../../middleware/errorHandler');
+        jest.dontMock('../../utils/logger');
+        jest.resetModules();
+    });
+
+    /**
+     * Re-assembles app.js with an order-recording double in place of each collaborator.
+     *
+     * Every double appends its own name to a shared array before doing its work, so the
+     * array read after a request is the exact sequence of stages that request traversed.
+     * The error-handling double keeps the four-parameter signature Express uses to
+     * recognise error middleware; a shorter signature would silently make it ordinary
+     * middleware and the assertions would then be measuring the wrong thing.
+     *
+     * @param {Function} routeBehaviour - what the route aggregator double does once
+     *     reached: respond to end the cycle, or call next(err) to forward an error
+     * @returns {{composedApp: Function, stages: string[]}} The sandboxed application and
+     *     the array that records which stages ran, in order
+     */
+    const composeWithRecordingDoubles = (routeBehaviour) => {
+        const stages = [];
+        let composedApp;
+
+        jest.isolateModules(() => {
+            jest.doMock('../../middleware/requestLogger', () => (req, res, next) => {
+                stages.push('requestLogger');
+                next();
+            });
+
+            jest.doMock('../../routes', () => (req, res, next) => {
+                stages.push('routes');
+                routeBehaviour(req, res, next);
+            });
+
+            jest.doMock('../../middleware/errorHandler', () => ({
+                errorHandler: (err, req, res, next) => {
+                    stages.push('errorHandler');
+                    res.status(500).json({ error: 'Internal Server Error' });
+                }
+            }));
+
+            composedApp = require('../../app.js');
+        });
+
+        return { composedApp, stages };
+    };
+
+    /**
+     * The success path: the request logger observes the request BEFORE the router resolves
+     * it, and the error handler stays out of the way.
+     *
+     * The recorded order is the whole assertion. A logger mounted after the router - or not
+     * mounted at all - yields ['routes'], because the route double ends the response and
+     * never calls next(), so the logger is never reached. The error handler must not appear:
+     * it is error middleware, and a request that completes normally is not an error.
+     */
+    it('runs the request logger before the router and leaves the error handler idle', async () => {
+        const { composedApp, stages } = composeWithRecordingDoubles((req, res) => {
+            res.status(200).send('Hello world');
+        });
+
+        const response = await request(composedApp)
+            .get('/hello')
+            .expect(200);
+
+        expect(response.text).toBe('Hello world');
+        expect(stages).toEqual(['requestLogger', 'routes']);
+    });
+
+    /**
+     * The forwarded-error path: an error handed to next(err) by the router reaches the
+     * error handler, and reaches it last.
+     *
+     * This is the case that catches a reordered error handler. Registered before the router,
+     * it is never offered the error - Express only searches for error middleware registered
+     * AFTER the point the error was raised - so the recorded order would lack the third
+     * stage and Express's own HTML error page would be served instead of the 500 envelope.
+     */
+    it('routes an error forwarded by the router to the error handler last', async () => {
+        const { composedApp, stages } = composeWithRecordingDoubles((req, res, next) => {
+            next(new Error('composition probe failure'));
+        });
+
+        const response = await request(composedApp)
+            .get('/hello')
+            .expect(500);
+
+        expect(stages).toEqual(['requestLogger', 'routes', 'errorHandler']);
+        expect(response.body.error).toBe('Internal Server Error');
+    });
+
+    /**
+     * The same forwarded-error path, assembled from the REAL middleware modules.
+     *
+     * Only two things are replaced here: the route aggregator, so an error can be forwarded
+     * without adding a production route, and the logger module, so the diagnostics are
+     * observable and the test log stays readable. requestLogger.js and errorHandler.js are
+     * the genuine articles, which makes this the end-to-end statement of the error contract:
+     * a forwarded error leaves the application as HTTP 500 carrying the published four-key
+     * envelope, with the framework fingerprint still suppressed.
+     *
+     * Asserting the status over the wire is stronger than asserting res.status(500) was
+     * called: had the handler sent its body before setting the status, Node would have
+     * already flushed 200 and this assertion - and only this assertion - would fail.
+     *
+     * One logger mock intercepts both middleware modules even though they spell the import
+     * differently ('../utils/logger.js' and '../utils/logger'): both specifiers resolve to
+     * the same file, and module mocks are keyed by resolved path.
+     */
+    it('assembles the real middleware so a forwarded error becomes the published 500 envelope', async () => {
+        const info = jest.fn();
+        const error = jest.fn();
+        let composedApp;
+
+        jest.isolateModules(() => {
+            jest.doMock('../../utils/logger', () => ({ logger: { info, error } }));
+            jest.doMock('../../routes', () => (req, res, next) => {
+                next(new Error('composition probe failure'));
+            });
+
+            composedApp = require('../../app.js');
+        });
+
+        const response = await request(composedApp)
+            .get('/hello')
+            .expect(500)
+            .expect('Content-Type', /application\/json/);
+
+        expect(response.body).toEqual({
+            error: 'Internal Server Error',
+            status: 500,
+            timestamp: expect.any(String),
+            path: '/hello'
+        });
+        expect(response.headers['x-powered-by']).toBeUndefined();
+
+        // The real request logger recorded the request before the real error handler
+        // recorded the failure, which is the mounted order restated in terms of the two
+        // modules' own observable output.
+        expect(info).toHaveBeenCalledTimes(1);
+        expect(error).toHaveBeenCalledTimes(1);
+        expect(info.mock.invocationCallOrder[0]).toBeLessThan(error.mock.invocationCallOrder[0]);
+    });
+});
+
+/**
+ * Server Module Import Isolation Test Suite
+ *
+ * The hooks at the top of this file are only safe because importing src/backend/server.js
+ * does nothing on its own: everything with a side effect - the call to server.listen() and
+ * the process-level 'unhandledRejection' and 'uncaughtException' registrations - lives
+ * behind a require.main === module guard, so it runs for `node server.js` and not for a
+ * require. That guard is load-bearing in two directions, and neither failure is visible in
+ * an endpoint assertion:
+ *
+ * - A listen() call on the import path would claim the configured port (3000) as this file
+ *   loads, and the beforeAll listen(0) would then be a second bind on an already-listening
+ *   server.
+ * - A process-level handler on the import path would install a handler that calls
+ *   process.exit(1) inside the Jest worker, so any unrelated rejection anywhere in the run
+ *   would kill the worker rather than fail a test.
+ *
+ * The case below measures both by re-importing the module in a sandboxed registry and
+ * comparing the process listener counts across that import. A sandbox is what makes the
+ * measurement possible at all: this file's own import happened before any test ran, so
+ * there is no longer a "before" to compare against.
+ *
+ * Scope note: only process-wide effects and port binding are asserted. Listeners the module
+ * attaches to the server object itself are not counted, because a server-scoped listener is
+ * inert until something tries to listen and how many exist is an implementation choice, not
+ * part of the contract this case exists to protect.
+ */
+describe('Server Module Import Isolation', () => {
+    /**
+     * Empties the sandbox registry so the freshly evaluated copy of server.js - and the
+     * second http.Server instance it created - are not retained after this case.
+     */
+    afterEach(() => {
+        jest.resetModules();
+    });
+
+    it('binds no port and installs no process handlers when it is required', () => {
+        const rejectionListenersBefore = process.listenerCount('unhandledRejection');
+        const exceptionListenersBefore = process.listenerCount('uncaughtException');
+
+        let importedServer;
+        jest.isolateModules(() => {
+            importedServer = require('../../server.js');
+        });
+
+        // The module's value is the http.Server itself, which is what lets this file own
+        // the lifecycle through listen()/close() rather than importing a factory.
+        expect(typeof importedServer.listen).toBe('function');
+        expect(typeof importedServer.close).toBe('function');
+
+        // Nothing bound a port on the way in.
+        expect(importedServer.listening).toBe(false);
+
+        // No process-wide behaviour was installed: the counts either side of the import are
+        // equal, so the require added nothing that could terminate this worker.
+        expect(process.listenerCount('unhandledRejection')).toBe(rejectionListenersBefore);
+        expect(process.listenerCount('uncaughtException')).toBe(exceptionListenersBefore);
+    });
+});
+
+/**
  * Integration Test File Documentation Summary
  * 
  * This integration test file implements comprehensive end-to-end testing for the
@@ -422,6 +683,8 @@ describe('Hello API Endpoint', () => {
  * - Comprehensive test coverage for success and error scenarios
  * - Real HTTP request processing through the complete application stack
  * - Performance-aware testing with response time validation
+ * - Middleware ordering protection for the application composition root
+ * - Import-isolation protection for the exported HTTP server
  * 
  * Educational Impact:
  * - Provides clear example of integration testing patterns for Node.js applications

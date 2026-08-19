@@ -125,12 +125,36 @@ curl -i http://localhost:3000/hello
 ```
 
 **Expected Console Output:**
+
+Starting the server with the default configuration (`NODE_ENV=development`, which is what
+`src/backend/.env` sets) prints eleven lines. The first six come from `config/index.js` as it
+loads the configuration; the remaining five come from the server once the port is bound, and
+carry the `[INFO]:` prefix that the logger adds in development only:
+
 ```
-🚀 HTTP Server successfully started and listening on port 3000
-🌐 Server is ready to accept HTTP requests
-📍 Local development URL: http://localhost:3000
-⚡ Node.js v22.23.2 | Express 5.2.1 | Environment: development
-🎯 Tutorial application initialized successfully
+📊 Configuration loaded successfully:
+   🚀 App Name: nodejs-tutorial-hello-world
+   🌐 Host: localhost
+   📡 Port: 3000
+   🔧 Environment: development
+   📝 Logging: enabled
+[INFO]: 🚀 HTTP Server successfully started and listening on port 3000
+[INFO]: 🌐 Server is ready to accept HTTP requests
+[INFO]: 📍 Local development URL: http://localhost:3000
+[INFO]: ⚡ Node.js v22.16.0 | Express 5.1.0 | Environment: development
+[INFO]: 🎯 Tutorial application initialized successfully
+```
+
+Run in any other environment (`NODE_ENV=production npm start`, for example) the six
+configuration lines are not printed at all and the five server lines appear without the
+`[INFO]:` prefix. The Node.js version shown is whatever `process.version` reports; the
+`Express 5.1.0` token is a fixed string in `server.js`, so check the version actually
+installed with `npm ls express` rather than reading it from this banner.
+
+Each request then adds one line of its own:
+
+```
+[INFO]: HTTP Request - Method: GET Path: /hello Body: {}
 ```
 
 ## 📚 API Reference
@@ -182,7 +206,7 @@ src/backend/
 - **Routing**: Express Router with modular organization
 - **Middleware**: Request logging and error handling
 - **Configuration**: Environment-based configuration management
-- **Logging**: Structured logging with multiple output formats
+- **Logging**: A thin wrapper over `console` with exactly two levels — `info` (stdout) and `error` (stderr). There is no log-level setting, no automatic timestamping, no response or timing log and no metrics: `NODE_ENV=development` adds the `[INFO]:` and `[ERROR]:` prefixes, and every other environment forwards the arguments to `console` unchanged. Request logging records three values — method, path and body. The path is a classification rather than the request target: the route that was asked for, or `[unmatched]`, plus `?[REDACTED]` when a query was present, so no token in a URL can end up in the log whether or not it sits in the query. The error handler's diagnostic is shaped field by field, and admits a value only by membership of a list written in the middleware rather than by its shape: headers, query and route parameters contribute an entry **count** and nothing else, the error contributes a listed `code` and a built-in class name rather than its message, the stack becomes at most five module names with their line and column, the User-Agent is recorded only as present or absent, and the client address is validated as an address before being reduced to its network portion (anything that is not one is omitted whole) — see the [Architecture Overview](./docs/architecture/overview.md) for the exact contract
 
 For a detailed explanation of the system architecture, design patterns, and component interactions, please see the [Architecture Overview](./docs/architecture/overview.md).
 
@@ -193,7 +217,13 @@ While this project is primarily intended for local educational use, it includes 
 ### 🐳 Docker Deployment
 
 **Quick Start:**
+
+The image is built from the repository root, because the Dockerfile copies the package with `COPY src/backend/...` paths. Leave the backend directory used by the earlier steps first:
+
 ```bash
+# From the repository root
+cd /path/to/repository-root
+
 # Build Docker image
 docker build -t nodejs-tutorial-app -f infrastructure/docker/Dockerfile .
 
@@ -216,7 +246,7 @@ kubectl get all -n tutorial-app
 
 The project includes GitHub Actions workflows for continuous integration and deployment:
 
-- **CI Pipeline**: Automated testing, linting, and security scanning
+- **CI Pipeline**: reproducible dependency installation, npm security audit, and Jest tests on Node 22.x
 - **CD Pipeline**: Container building and deployment automation
 - **Multi-Environment**: Support for development, staging, and production
 
@@ -261,19 +291,30 @@ npm run test:watch
 
 ### 🔧 Configuration
 
-The application uses environment variables for configuration:
+The application reads its configuration through `src/backend/config/index.js`, which loads
+`src/backend/.env` with dotenv and applies a default to every value. These are the settings the
+code actually consults:
 
 ```env
-# Server configuration
-PORT=3000
-NODE_ENV=development
-HOST=localhost
-LOG_LEVEL=info
+# Read and used by the running application
+PORT=3000                  # port the HTTP server binds (default 3000)
+NODE_ENV=development       # selects the logger's [INFO]:/[ERROR]: prefixes and the config summary
+APP_NAME=node-tutorial-app # shown in the startup summary; startup fails if it is empty
+HOST=localhost             # shown in the startup summary
+ENABLE_LOGGING=true        # set to 'false' to silence the configuration summary
 
-# Feature flags
-HEALTH_CHECK_ENABLED=true
-METRICS_ENABLED=false
+# Read into the config object, not consumed by any code yet
+AUTO_RESTART=true
+TRUST_PROXY=false
+JSON_LIMIT=10mb
+URLENCODED_LIMIT=10mb
 ```
+
+Every other variable in `.env` and `.env.example` — `LOG_LEVEL`, `APP_VERSION`, `CORS_ORIGIN`,
+`RATE_LIMIT_*`, `SESSION_SECRET`, `HEALTH_CHECK_ENDPOINT`, `METRICS_INTERVAL` and the rest — is
+a placeholder for a later tutorial. Nothing reads them, so setting one changes nothing: this
+application has no log-level filter, no health-check endpoint of its own (the container and
+Kubernetes probes call `/hello`) and no metrics collection.
 
 ## 🤝 Contributing
 

@@ -183,7 +183,7 @@ All contributions must include appropriate testing:
 - **Unit Tests**: Test individual functions and modules
 - **Integration Tests**: Test the `/hello` endpoint using Supertest
 - **Coverage**: Maintain at least 90% code coverage
-- **Performance**: Ensure tests complete within 30 seconds
+- **Performance**: Keep each individual test within Jest's configured 30-second timeout
 
 ### Running Tests
 

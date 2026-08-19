@@ -51,9 +51,21 @@ WORKDIR /usr/src/app
 # Copy package management files from builder stage for production dependency installation
 COPY --from=builder /usr/src/app/package.json /usr/src/app/package-lock.json ./
 
-# Install only production dependencies to minimize image size and security exposure
-# --omit=dev excludes devDependencies from installation
-RUN npm ci --omit=dev \
+# Install dependencies for the environment this image is built for
+# --omit=dev excludes devDependencies from installation, so the default build
+#   (NODE_ENV=production, from the ARG above) ships runtime dependencies only and keeps
+#   image size and security exposure to a minimum
+# --include=dev applies only when NODE_ENV=development, which is the build argument
+#   infrastructure/docker/docker-compose.yml passes for the local development service:
+#   that service overrides the command with `npm run dev`, which runs nodemon - a
+#   devDependency - from inside the container, and its anonymous /usr/src/app/node_modules
+#   volume is seeded from this image rather than from the host
+# Any other NODE_ENV value falls back to the lean production install
+RUN if [ "${NODE_ENV}" = "development" ]; then \
+        npm ci --include=dev; \
+    else \
+        npm ci --omit=dev; \
+    fi \
     && npm cache clean --force
 
 # Copy application source code from builder stage

@@ -96,18 +96,43 @@ Development mode uses `nodemon` for automatic server restart when file changes a
 ```bash
 # Start development server with auto-reload
 npm run dev
-
-# Expected output:
-# Server starting...
-# Server listening on port 3000
-# Development mode: Auto-reload enabled
 ```
 
+Expected output — five lines from nodemon, then the same startup output `npm start` produces:
+
+```
+[nodemon] 3.1.14
+[nodemon] to restart at any time, enter `rs`
+[nodemon] watching path(s): **/*
+[nodemon] watching extensions: js,json
+[nodemon] starting `node server.js`
+📊 Configuration loaded successfully:
+   🚀 App Name: nodejs-tutorial-hello-world
+   🌐 Host: localhost
+   📡 Port: 3000
+   🔧 Environment: development
+   📝 Logging: enabled
+[INFO]: 🚀 HTTP Server successfully started and listening on port 3000
+[INFO]: 🌐 Server is ready to accept HTTP requests
+[INFO]: 📍 Local development URL: http://localhost:3000
+[INFO]: ⚡ Node.js v22.16.0 | Express 5.1.0 | Environment: development
+[INFO]: 🎯 Tutorial application initialized successfully
+```
+
+Editing a watched file prints `[nodemon] restarting due to changes...` followed by the startup
+lines again.
+
 **Development Mode Features:**
-- **Auto-reload**: Automatically restarts server on file changes
-- **Enhanced Logging**: Detailed request/response logging for debugging
-- **Error Reporting**: Comprehensive error messages for development
-- **Performance Monitoring**: Basic timing and memory usage reporting
+- **Auto-reload**: nodemon restarts `node server.js` when a `.js` or `.json` file under
+  `src/backend` changes (tests, `node_modules`, `coverage` and the lockfile are ignored)
+- **Prefixed Logging**: because `NODE_ENV` is `development`, the logger prefixes its output with
+  `[INFO]:` and `[ERROR]:`, and `config/index.js` prints the configuration summary above. The
+  log content itself is identical in every environment
+- **Error Reporting**: an error forwarded to the error handler is logged server-side with its
+  `code` and class name when those are ones the middleware lists, the module name plus line and
+  column of its top frames, and how many headers and parameters the request carried — never
+  which ones, and never its message; the client receives the same generic 500 envelope in every
+  environment
 
 ### Production Mode
 
@@ -117,17 +142,35 @@ Production mode runs the server using the standard `node` runtime without additi
 # Start production server
 npm start
 
-# Expected output:
-# Server starting...
-# Server listening on port 3000
-# Production mode: Optimized for performance
 ```
 
+`npm start` runs `node server.js` with no watcher. With the committed `.env` in place
+`NODE_ENV` is still `development`, so the output is the eleven lines shown for development mode
+without the nodemon banner. Setting the environment explicitly changes the presentation:
+
+```bash
+NODE_ENV=production npm start
+```
+
+```
+🚀 HTTP Server successfully started and listening on port 3000
+🌐 Server is ready to accept HTTP requests
+📍 Local development URL: http://localhost:3000
+⚡ Node.js v22.16.0 | Express 5.1.0 | Environment: production
+🎯 Tutorial application initialized successfully
+```
+
+The configuration summary is not printed outside development, and the `[INFO]:` prefix is
+dropped. The `Express 5.1.0` token is a fixed string in `server.js`; run `npm ls express` to see
+the version actually installed.
+
 **Production Mode Features:**
-- **Optimized Performance**: Minimal overhead for maximum throughput
-- **Standard Logging**: Essential logging without development verbosity
-- **Error Handling**: Secure error responses without sensitive information disclosure
-- **Resource Efficiency**: Minimal memory footprint and CPU usage
+- **No Watcher**: the process is plain `node server.js`, so no file watching or restart logic runs
+- **Unprefixed Logging**: the same two log levels, without the development prefixes
+- **Error Handling**: generic 500 responses that disclose no error detail, message or stack, in
+  every environment
+- **No Extra Machinery**: this tutorial adds no clustering, caching, compression or metrics, so
+  "production mode" means only the environment value and the presentation change described above
 
 ### Server Startup Verification
 
@@ -169,8 +212,11 @@ wget -qO- http://localhost:3000/hello
 
 # Using HTTPie
 http GET localhost:3000/hello
+```
 
-# Using JavaScript fetch
+Using the browser or Node.js `fetch` API:
+
+```javascript
 fetch('http://localhost:3000/hello')
   .then(response => response.text())
   .then(data => console.log(data));
@@ -197,6 +243,7 @@ src/backend/
 ├── server.js              # Main entry point - HTTP server initialization
 ├── app.js                 # Express application configuration and middleware setup
 ├── routes/                # Route definitions and handlers
+│   ├── index.js          # Route aggregator - mounts helloRouter at /hello
 │   └── hello.js          # Hello endpoint implementation
 ├── middleware/            # Custom Express middleware
 │   ├── errorHandler.js   # Centralized error handling middleware
@@ -204,7 +251,7 @@ src/backend/
 ├── config/                # Configuration management
 │   └── index.js          # Environment-specific configuration
 ├── utils/                 # Utility functions and helpers
-│   └── logger.js         # Structured logging utility
+│   └── logger.js         # Two-level console logger (info, error)
 ├── tests/                 # Test suites
 │   ├── unit/             # Unit tests
 │   └── integration/      # Integration tests
@@ -218,15 +265,16 @@ src/backend/
 **Core Application Files:**
 - **`server.js`**: Main entry point that starts the HTTP server and binds to port 3000
 - **`app.js`**: Express application configuration, middleware registration, and route setup
+- **`routes/index.js`**: Route aggregator that mounts `helloRouter` at `/hello`, so `app.js` only has to mount this router at `/`
 - **`routes/hello.js`**: Implementation of the `/hello` endpoint with proper error handling
 
 **Middleware Components:**
-- **`errorHandler.js`**: Centralized error handling using Express 5.1.0's enhanced promise support
-- **`requestLogger.js`**: HTTP request/response logging for monitoring and debugging
+- **`errorHandler.js`**: Centralized error handling using Express 5's enhanced promise support. Logs one diagnostic entry per forwarded error and answers the client with a generic 500 envelope. The entry records the shape of the request, not its content, and admits a value only by membership of a list written in the module rather than by its shape — a regular expression describes what a value looks like, and an opaque token can be made to look like anything. It records an entry **count** for the headers, query and route parameters (no name and no value from any of them), a route classification in place of the request target, the client address reduced to its network portion, the error's `code` when it is one of the codes the module lists, its class name when it is a built-in error, the stack reduced to at most five module names with their line and column, and the User-Agent as present or absent. The client address is the one value derived rather than selected: it is reduced to its network portion only after Node's own parser confirms it is an address, and omitted whole when it is not. The error's free-form message is never recorded
+- **`requestLogger.js`**: Logs each request once on arrival, before routing: the method when HTTP defines it, a classification of the request target — the route asked for or `[unmatched]`, with `?[REDACTED]` appended when a query was present — and the body. The target is classified rather than logged because a secret needs no label and no query string to be in a URL, and capping one does not redact it. It never reads or writes the response, so there is no response, status-code or timing log
 
 **Support Modules:**
 - **`config/index.js`**: Environment-based configuration management
-- **`utils/logger.js`**: Structured logging with appropriate severity levels
+- **`utils/logger.js`**: A two-level wrapper over `console` — `info` writes to stdout and `error` to stderr. There are no other levels and no level filter, and the wrapper adds no timestamp of its own (the error diagnostic and the shutdown line each record one explicitly in what they log); `NODE_ENV=development` adds the `[INFO]:` and `[ERROR]:` prefixes
 
 ## Dependencies
 
@@ -235,6 +283,7 @@ src/backend/
 | Package | Version | Purpose | License |
 |---------|---------|---------|---------|
 | [express](https://www.npmjs.com/package/express) | ^5.1.0 | Fast, unopinionated, minimalist web framework for Node.js | MIT |
+| [dotenv](https://www.npmjs.com/package/dotenv) | ^16.3.1 | Loads the package-local `.env` file so `config/index.js` can read `PORT`, `NODE_ENV` and `HOST` | BSD-2-Clause |
 
 **Express.js 5.1.0 Key Features:**
 - **Promise Support**: Middleware can now return rejected promises, caught by the router as errors
@@ -246,10 +295,14 @@ src/backend/
 
 | Package | Version | Purpose | License |
 |---------|---------|---------|---------|
+| [jest](https://www.npmjs.com/package/jest) | 30.4.2 | Test runner for the unit and integration suites, and the coverage gate | MIT |
 | [nodemon](https://www.npmjs.com/package/nodemon) | ^3.0.0 | Auto-restart development server on file changes | MIT |
+| [supertest](https://www.npmjs.com/package/supertest) | 7.1.1 | HTTP assertions against the Express app and the exported server | MIT |
 
 **Development Tools:**
+- **`jest`**: Runs `npm test`, `npm run test:coverage` and `npm run test:watch`, and enforces the 90% coverage thresholds for `routes/` and `middleware/`
 - **`nodemon`**: Automatically restarts the node application when file changes are detected
+- **`supertest`**: Issues the HTTP requests the endpoint suites assert on
 - **Built-in Node.js tools**: Debugging with `--inspect` flag, performance profiling
 
 ## Architecture Overview
@@ -290,38 +343,73 @@ HTTP Client → HTTP Server → Express Application → Route Handler → Respon
 
 | Variable | Default | Description | Example |
 |----------|---------|-------------|---------|
-| `NODE_ENV` | `development` | Application environment | `production` |
+| `NODE_ENV` | `development` | Application environment. Selects the `[INFO]:`/`[ERROR]:` log prefixes and whether the configuration summary is printed | `production` |
 | `PORT` | `3000` | HTTP server port | `8080` |
-| `LOG_LEVEL` | `info` | Logging verbosity | `debug` |
+| `APP_NAME` | `node-tutorial-app` | Name shown in the configuration summary; startup fails if it is empty | `my-tutorial` |
+| `HOST` | `localhost` | Host shown in the configuration summary | `0.0.0.0` |
+| `ENABLE_LOGGING` | `true` | Set to `false` to suppress the configuration summary | `false` |
+
+`AUTO_RESTART`, `TRUST_PROXY`, `JSON_LIMIT` and `URLENCODED_LIMIT` are also read into the
+configuration object but no code consumes them yet. Every other variable in `.env` and
+`.env.example` — including `LOG_LEVEL`, `SESSION_SECRET`, `RATE_LIMIT_*`,
+`HEALTH_CHECK_ENDPOINT` and `METRICS_INTERVAL` — is a placeholder for a later tutorial and is
+read by nothing. In particular there is **no** log-level setting: `logger.js` exposes `info` and
+`error` in every environment and filters neither.
 
 ### Configuration Examples
 
 ```bash
-# Development configuration
+# Development configuration (matches the committed .env)
 export NODE_ENV=development
 export PORT=3000
-export LOG_LEVEL=debug
 
-# Production configuration  
+# Production configuration
 export NODE_ENV=production
 export PORT=8080
-export LOG_LEVEL=info
 ```
 
-## Performance Monitoring
+## Observability
 
-### Built-in Monitoring
+### What Is Implemented
 
-The application includes basic monitoring capabilities:
+- **One log line per request**, written on arrival by `requestLogger` before routing:
+  `[INFO]: HTTP Request - Method: GET Path: /hello Body: {}`. The path is a **classification**,
+  not the target: the route that was asked for, or `[unmatched]`, plus `?[REDACTED]` when a query
+  was present. A request for `/A3F9K2QXOPAQUE1234567890` is logged as `Path: [unmatched]`
+- **One diagnostic entry per forwarded error**, written by `errorHandler`: an entry count for the
+  headers, query and route parameters, the same route classification, a validated network-only
+  client address (`[omitted]` when the value is not an address), the error's `code` when it is one
+  the middleware lists, its class name when it is a built-in error, at most five stack frames
+  reduced to a module name with its line and column, and the User-Agent recorded only as present
+  (`[omitted]`) or absent. The error's own message is never logged, and no header, query or
+  parameter name or value is
+- **Five startup lines** and, in development only, a six-line configuration summary
+- **Values that cannot grow**: every value the error diagnostic records is a member of a list
+  written in the middleware, an integer, a fixed marker, or a validated address network of at most
+  16 characters, so nothing needs truncating. The
+  request logger truncates only the body and its serialization-failure reason at 200 characters,
+  marked with `...[truncated]`; its method and path are drawn from fixed vocabularies
 
-### Performance Metrics
+### What Is Not Implemented
 
-| Metric | Target | Monitoring Method |
+No response or status-code logging, no request timing or duration, no request correlation IDs, no
+`warn`/`debug` levels, no log-level filtering, no automatic timestamping, no memory or CPU
+sampling, no metrics endpoint and no application health endpoint — the container, Compose and
+Kubernetes health checks all call `GET /hello`. Adding any of these means adding code; none of
+them can be switched on through configuration.
+
+On timestamps specifically: the logger wrapper adds none, so request-arrival and startup lines
+carry no time of their own. Two places record one explicitly in the text they log — the error
+diagnostic's `timestamp` field and the shutdown line in `server.js` — so a timestamp appears where
+that code put it, never because the logger supplied it.
+
+The figures below are manual-measurement targets, not values the application reports:
+
+| Metric | Target | How to measure it |
 |--------|--------|------------------|
-| Response Time | < 100ms | Built-in timing |
-| Memory Usage | < 50MB | Process monitoring |
-| Error Rate | < 0.1% | Error logging |
-| Uptime | > 99.9% | Health checks |
+| Response Time | < 100ms | Time a request from the client, e.g. `time curl http://localhost:3000/hello` |
+| Memory Usage | < 50MB | Inspect the process externally, e.g. `ps -o rss= -p <server pid>` |
+| Errors | none expected | Read the console for `[ERROR]:` lines |
 
 ## Testing
 
@@ -406,10 +494,12 @@ npm start
 **Module Not Found:**
 ```bash
 # Error: Cannot find module 'express'
-# Solution: Reinstall dependencies
-rm -rf node_modules package-lock.json
-npm install
+# Solution: Reinstall from the committed lockfile
+rm -rf node_modules
+npm ci
 ```
+
+Keep `package-lock.json`: `npm ci` installs exactly the versions it records, which is what makes the install reproducible. Only regenerate the lockfile deliberately, after an intentional `package.json` change.
 
 **Permission Denied:**
 ```bash
@@ -421,13 +511,16 @@ npm start
 
 ### Debugging
 
-**Enable Debug Logging:**
+**Turn on the development log prefixes and the configuration summary:**
 ```bash
-# Set debug environment
+# NODE_ENV is the only variable that changes logging behaviour
 export NODE_ENV=development
-export LOG_LEVEL=debug
 npm run dev
 ```
+
+There is no debug level to raise: `logger.js` has `info` and `error` and nothing else, so the
+volume of application logging is fixed. To see more than the one line per request that
+`requestLogger` writes, use the inspector below or add a `logger.info` call where you need it.
 
 **Node.js Inspector:**
 ```bash

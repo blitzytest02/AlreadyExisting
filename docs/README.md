@@ -58,12 +58,14 @@ The application employs a **Single-Threaded Event-Driven Architecture** pattern,
 - **Availability**: 99.9% uptime for local development
 
 ### Monitoring and Health Checks
-The application includes basic monitoring capabilities:
-- Process uptime tracking
-- Memory usage monitoring
-- Response time measurement
-- Error rate tracking
-- Basic health check endpoint
+The application registers exactly one application route, `GET /hello`, and has no monitoring or health-check surface: there is no health check endpoint, no metrics endpoint, and no uptime, memory, response-time or error-rate instrumentation. Its only observability is console logging: one request log line per request, recording the method, a classification of the request path (the route that was asked for, or `[unmatched]`, with `?[REDACTED]` appended when a query was present) and the body; the error handler's diagnostic log; and the startup messages.
+
+The items below are therefore future targets rather than current capability:
+- Process uptime tracking (future)
+- Memory usage monitoring (future)
+- Response time measurement (future)
+- Error rate tracking (future)
+- Health check endpoint (future)
 
 ## Security Implementation
 
