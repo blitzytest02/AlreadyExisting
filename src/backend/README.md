@@ -284,7 +284,7 @@ src/backend/
 - **`routes/hello.js`**: Implementation of the `/hello` endpoint with proper error handling
 
 **Middleware Components:**
-- **`errorHandler.js`**: Centralized error handling using Express 5's enhanced promise support. Writes one diagnostic entry per forwarded error — the error's message and name together with the request URL, method, params and query, an ISO timestamp, the client address and the request's `host`, `content-type` and `accept` headers, plus the error's stack in development only — and answers the client with a generic 500 envelope of four fields (`error`, `status`, `timestamp`, `path`) — where `path` is `req.originalUrl || req.url`, so it echoes the caller's own target including any query string. It never calls `next()`: it is the terminal middleware, so the detail stays in the server log and only the generic envelope reaches the client
+- **`errorHandler.js`**: Centralized error handling using Express 5's enhanced promise support. Writes one diagnostic entry per forwarded error — the error's message and name together with the request URL, method, params and query, an ISO timestamp, the client address and the request's `host`, `content-type` and `accept` headers, plus the error's stack in development only — and answers the client with a generic 500 envelope of four fields (`error`, `status`, `timestamp`, `path`) — where `path` is `req.originalUrl || req.url`, so it echoes the caller's own target including any query string. Because of that echo the response is marked `X-Content-Type-Options: nosniff`, so a target carrying raw markup cannot be sniffed out of the JSON body and rendered as HTML; that header is set on this 500 response only. It never calls `next()`: it is the terminal middleware, so the detail stays in the server log and only the generic envelope reaches the client
 - **`requestLogger.js`**: Logs each request once on arrival, before routing: the method (`req.method`), the path (`req.originalUrl`) and the body. Object bodies are serialized with `JSON.stringify`, primitive bodies are converted with `String`, and a request with no body — the normal `GET /hello` case — is logged as `{}`. It never reads or writes the response, so there is no response, status-code or timing log
 
 **Support Modules:**
@@ -475,9 +475,20 @@ curl -i http://localhost:3000/nonexistent
   message, stack and name never reach the client, and neither do the method, headers, params,
   query or client address; `status` and a `timestamp` are returned; and `path` repeats
   `req.originalUrl || req.url`, query string included, which is the one piece of the request the
-  response hands back
+  response hands back. That echo is why the handler sets `X-Content-Type-Options: nosniff` on the
+  response: a target carrying raw markup is echoed into a JSON body, and the header keeps a
+  content-sniffing client from treating that body as HTML. It is the only header the application
+  sets on any response, and it applies to the 500 alone — the successful `/hello` response and
+  the framework's own 404 are unaffected by it
 - **Dependencies**: Regular security updates using `npm audit`
 - **Transport**: HTTP only (suitable for local development)
+- **No Helmet, despite what the archived specification says**: the generated specification document
+  under `blitzy/documentation/` describes Helmet.js as a dependency and lists the headers it would
+  set — `Content-Security-Policy`, `X-Frame-Options` and the rest. None of that ships. Helmet
+  appears in neither `package.json` nor `package-lock.json`, and the two header behaviours above
+  are the only ones the application configures. That document is a historical record of the plan,
+  kept as written; where it and this file disagree about what runs, this file and the code are
+  what to trust
 
 ### Known Limitations of the Tutorial Middleware
 

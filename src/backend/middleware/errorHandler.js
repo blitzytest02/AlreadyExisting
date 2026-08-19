@@ -21,6 +21,9 @@
  *   from a fixed allow-list, so a credential a client sends in an Authorization header or a
  *   cookie is not copied into the log (CWE-532), and the stack - the one field that names
  *   absolute filesystem paths - is recorded in development only
+ * - The response carries X-Content-Type-Options: nosniff, because its `path` field echoes the
+ *   caller's own target: a request target carrying raw markup therefore appears in a JSON body,
+ *   and nosniff is what stops a content-sniffing client treating that body as HTML
  * 
  * Requirements Addressed:
  * - F-001-RQ-004: Graceful error handling for server startup and runtime errors
@@ -95,18 +98,20 @@ function recordedRequestHeaders(headers) {
  * It serves as the final destination for all application errors, including those
  * automatically forwarded from rejected promises in Express 5.
  * 
- * The middleware performs three primary functions:
+ * The middleware performs four primary functions:
  * 1. Comprehensive error logging for debugging and monitoring
  * 2. Setting appropriate HTTP status code for error responses
- * 3. Sending standardized, generic error response to clients
+ * 3. Marking the response nosniff, so the target it echoes cannot be sniffed as HTML
+ * 4. Sending standardized, generic error response to clients
  * 
  * Error Handling Flow:
  * 1. Receives error from Express framework (manual next(err) or automatic promise rejection)
  * 2. Logs the error and the request context needed to reproduce it - the request's headers are
  *    recorded from an allow-list, and the stack trace is included in development only
  * 3. Sets HTTP 500 Internal Server Error status code
- * 4. Sends generic JSON error response to client
- * 5. Terminates request-response cycle (does not call next())
+ * 4. Sets X-Content-Type-Options: nosniff on the response
+ * 5. Sends generic JSON error response to client
+ * 6. Terminates request-response cycle (does not call next())
  * 
  * @function errorHandler
  * @param {Error} err - The error object that was thrown or passed to next(). Contains
@@ -195,7 +200,23 @@ function errorHandler(err, req, res, next) {
     // Status 500 is the standard HTTP response code for generic server errors
     res.status(500);
 
-    // Step 3: Send standardized, generic JSON error response to client
+    // Step 3: Tell the client not to second-guess the response's content type
+    //
+    // The envelope below hands the caller's own request target back in `path`, verbatim, which
+    // is deliberate - it is what lets a caller correlate the failure with the request it sent.
+    // The consequence is that a target carrying raw markup (`/boom?x=<script>...`) is echoed
+    // into a response body. The body is `application/json`, so a conforming client renders
+    // nothing; a legacy content-sniffing client, however, may disregard that content type,
+    // decide the payload looks like HTML and execute the markup it finds. `nosniff` forecloses
+    // that: it instructs the client to honour the declared type and never sniff a different one.
+    //
+    // This is the same header Express's own not-found response sends alongside its escaped
+    // target, so the error path here is marked no more strictly than the framework marks its
+    // own. It is one header on a response that is already a failure, and it is set here rather
+    // than by any header middleware - none is a dependency of this tutorial, and none is added.
+    res.set('X-Content-Type-Options', 'nosniff');
+
+    // Step 4: Send standardized, generic JSON error response to client
     // The response is intentionally generic to prevent information disclosure
     // that could expose sensitive implementation details or security vulnerabilities
     // 

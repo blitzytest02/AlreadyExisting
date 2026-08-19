@@ -16,9 +16,16 @@
  * What the handler does (the contract asserted below)
  * --------------------------------------------------
  * On an error forwarded to it, the handler writes one diagnostic log entry of nine fields - ten
- * in development, where the error's stack is added - sets status 500, and sends a generic
- * four-key JSON envelope. It deliberately never calls `next()`: it is the terminal middleware,
- * and the response is already sent by the time it returns.
+ * in development, where the error's stack is added - sets status 500, marks the response
+ * `X-Content-Type-Options: nosniff`, and sends a generic four-key JSON envelope. It deliberately
+ * never calls `next()`: it is the terminal middleware, and the response is already sent by the
+ * time it returns.
+ *
+ * The nosniff header is contract too, and for a specific reason: the envelope's `path` field
+ * hands the caller's own target back verbatim, so a target carrying raw markup ends up inside a
+ * JSON body. The header is what stops a content-sniffing client deciding that body is HTML. It
+ * is asserted by name, by value, by call count and by ordering, because a header set after the
+ * body has been written would be too late to have any effect.
  *
  * Two properties of the diagnostic are contract rather than detail, and are asserted as such:
  *
@@ -141,11 +148,15 @@ function createRequest(overrides) {
 }
 
 /**
- * Builds a fresh mock response with chainable `status` and `json` spies.
+ * Builds a fresh mock response with chainable `status`, `set` and `json` spies.
  *
- * The handler calls them as two separate statements, so chaining is not strictly required -
+ * The handler calls them as three separate statements, so chaining is not strictly required -
  * but returning `this` matches how Express actually behaves and costs nothing, and it means
- * this mock would still work if the two calls were ever chained.
+ * this mock would still work if the calls were ever chained.
+ *
+ * `send` and `end` are present although the handler calls neither: they are spies precisely so
+ * that a case can assert the body was written by `json` alone. Every spy records its invocation
+ * order, which is what lets the header cases assert `set` ran before `json` flushed the headers.
  *
  * @returns {Object} a mock Express response
  */
@@ -215,13 +226,31 @@ describe('errorHandler middleware', () => {
             expect(res.status).toHaveBeenCalledWith(500);
         });
 
-        it('sends exactly one JSON body and uses no other response method', () => {
+        it('sends exactly one JSON body and writes it by no other means', () => {
             errorHandler(err, req, res, next);
 
             expect(res.json).toHaveBeenCalledTimes(1);
             expect(res.send).not.toHaveBeenCalled();
-            expect(res.set).not.toHaveBeenCalled();
             expect(res.end).not.toHaveBeenCalled();
+        });
+
+        it('marks the response nosniff, and sets no other header', () => {
+            errorHandler(err, req, res, next);
+
+            // The value matters as much as the name: 'nosniff' is the only directive the header
+            // defines, and a client ignores anything else. Both are pinned, so a typo in either
+            // fails here rather than in a browser.
+            expect(res.set).toHaveBeenCalledTimes(1);
+            expect(res.set).toHaveBeenCalledWith('X-Content-Type-Options', 'nosniff');
+        });
+
+        it('sets the nosniff header before the body is written', () => {
+            errorHandler(err, req, res, next);
+
+            // Ordering is the whole point of a response header: res.json flushes the headers
+            // with the body, so a header set afterwards never reaches the client at all.
+            expect(res.set.mock.invocationCallOrder[0])
+                .toBeLessThan(res.json.mock.invocationCallOrder[0]);
         });
 
         it('sends an envelope of exactly four keys and nothing else', () => {
@@ -626,6 +655,24 @@ describe('errorHandler middleware', () => {
             errorHandler(err, req, res, next);
 
             expect(sentPayload(res).path).toBe('/hello?x=\u202Ereversed');
+        });
+
+        it('echoes a markup-bearing target verbatim but marks the response nosniff', () => {
+            // The reflection and its guard, asserted together, because separately each looks like
+            // a different decision than it is. The target is echoed unchanged - `path` exists to
+            // correlate a failure with the request that caused it, and an encoded form would no
+            // longer be the caller's own target - so what makes the echo safe is the response
+            // being unsniffable rather than the value being neutralised. A raw target like this
+            // one reaches the handler when a caller writes it directly to the socket; a browser
+            // would percent-encode it first.
+            const req = createRequest({ originalUrl: '/boom?x=<script>alert(1)</script>' });
+
+            errorHandler(err, req, res, next);
+
+            expect(sentPayload(res).path).toBe('/boom?x=<script>alert(1)</script>');
+            expect(res.set).toHaveBeenCalledWith('X-Content-Type-Options', 'nosniff');
+            expect(res.set.mock.invocationCallOrder[0])
+                .toBeLessThan(res.json.mock.invocationCallOrder[0]);
         });
     });
 

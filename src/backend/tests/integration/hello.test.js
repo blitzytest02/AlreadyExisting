@@ -314,6 +314,12 @@ describe('Application Composition and Middleware Ordering', () => {
         });
         expect(response.headers['x-powered-by']).toBeUndefined();
 
+        // The envelope's `path` echoes the caller's target, so the error handler marks the
+        // response nosniff. Asserted here as well as in the middleware's own suite because this
+        // is the only place the header is read back off a real Express response rather than off
+        // a mock: it proves the value survives the response pipeline that actually serves it.
+        expect(response.headers['x-content-type-options']).toBe('nosniff');
+
         // The real request logger recorded the request before the real error handler
         // recorded the failure, which is the mounted order restated in terms of the two
         // modules' own observable output.

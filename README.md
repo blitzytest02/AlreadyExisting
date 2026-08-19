@@ -13,7 +13,7 @@ This application is built to provide a hands-on, practical example for understan
 - **Production-Ready Architecture**: Demonstrates enterprise-grade development patterns
 - **Comprehensive Documentation**: Extensive guides for setup, deployment, and contribution
 - **Container Support**: Docker and Kubernetes configurations included
-- **Deliberately Minimal Security Surface**: `x-powered-by` is disabled; beyond that no security-header, CORS, rate-limiting, authentication or input-validation middleware is installed, and transport is plain HTTP. `src/backend/README.md` records the known limitations of the logging and error middleware
+- **Deliberately Minimal Security Surface**: `x-powered-by` is disabled and the error handler marks its 500 response `X-Content-Type-Options: nosniff`; beyond those two, no security-header, CORS, rate-limiting, authentication or input-validation middleware is installed, and transport is plain HTTP. `src/backend/README.md` records the known limitations of the logging and error middleware
 
 ### 🛠 Built With
 
@@ -27,7 +27,7 @@ This application is built to provide a hands-on, practical example for understan
 - **Express Version**: 5.1.0 with automatic promise rejection handling
 - **Platform Support**: Cross-platform compatibility (Windows, macOS, Linux)
 - **Performance**: Response time < 100ms; measured resident memory ≈ 65MB, of which a bare Node.js process already accounts for ~44MB
-- **Security**: `x-powered-by` disabled — the only security control the application configures. No security headers, CORS, rate limiting, authentication, input validation or ReDoS mitigation is implemented; hardening is out of scope for this tutorial
+- **Security**: `x-powered-by` disabled, and `X-Content-Type-Options: nosniff` set on the error handler's 500 response because that response echoes the caller's own request target — those two are the only security controls the application configures. No security-header middleware, CORS, rate limiting, authentication, input validation or ReDoS mitigation is implemented, and nothing is set on the successful `/hello` response; hardening is out of scope for this tutorial
 
 ## 🚀 Getting Started
 

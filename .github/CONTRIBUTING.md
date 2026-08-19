@@ -217,7 +217,10 @@ first.
   500 envelope does return the request's own path, query string included
 - **Dependencies**: Keep dependencies updated and run `npm audit` regularly
 - **Headers**: Add security headers deliberately if you need them; no header middleware is a
-  dependency here, and the only header behaviour the app sets is `x-powered-by` being disabled
+  dependency here, and the app sets exactly two header behaviours of its own — `x-powered-by` is
+  disabled in `app.js`, and `errorHandler` marks its 500 response `X-Content-Type-Options:
+  nosniff` because that response echoes the caller's request target. The successful `/hello`
+  response carries neither a CSP nor any other hardening header
 - **Logging**: Log security events appropriately, and log the minimum that makes them useful — the
   shipped request log records the target verbatim, and the shipped error diagnostic records the
   request's target, query and client address but takes its headers from a fixed allow-list
