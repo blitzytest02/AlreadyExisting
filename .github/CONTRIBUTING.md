@@ -215,7 +215,12 @@ first.
   validates input today, and no body parser is mounted, so there is no existing pattern to copy
 - **Error Handling**: Never expose sensitive information in error messages. Note that the shipped
   500 envelope does return the request's own path, query string included
-- **Dependencies**: Keep dependencies updated and run `npm audit` regularly
+- **Dependencies**: Keep dependencies updated and run `npm audit` regularly. It currently reports
+  zero advisories, but `npm ci` warns about four deprecated dev-only packages and one gated install
+  script; `src/backend/README.md` inventories all five and which of them can actually be fixed.
+  One action is outstanding and belongs to a pull request that owns dependency policy: move
+  `supertest` off the deprecated `7.1.1` pin to `7.1.3` or later, regenerate the lockfile, and
+  re-run `npm ci` and `npm audit`
 - **Headers**: Add security headers deliberately if you need them; no header middleware is a
   dependency here, and the app sets exactly two header behaviours of its own — `x-powered-by` is
   disabled in `app.js`, and `errorHandler` marks its 500 response `X-Content-Type-Options:

@@ -320,6 +320,39 @@ src/backend/
 - **`supertest`**: Issues the HTTP requests the endpoint suites assert on
 - **Built-in Node.js tools**: Debugging with `--inspect` flag, performance profiling
 
+### Known Deprecations and Install Scripts
+
+`npm ci` prints four deprecation warnings and one install-script warning. None of them is a
+vulnerability — `npm audit` reports **zero advisories** on both the full tree and the
+production-only tree (`npm audit --omit=dev`), and `npm audit signatures` verifies every installed
+package — but they are real, so they are inventoried here rather than left as unexplained install
+noise. Every one of them is **development-only**: the production tree that actually ships contains
+none of these packages, and none is present in the container image.
+
+| Package | Version | How it gets here | State | Fix available |
+|---------|---------|------------------|-------|---------------|
+| [supertest](https://www.npmjs.com/package/supertest) | 7.1.1 | direct devDependency, pinned exactly | deprecated by its maintainer, which asks for 7.1.3 or later | yes — 7.1.3+, and the current release 7.2.2 is not deprecated |
+| [glob](https://www.npmjs.com/package/glob) | 10.5.0 | `@jest/reporters`, `jest-config` and `jest-runtime` each require `glob@^10.5.0` | deprecated: old glob majors are unsupported | not reachable — the current release is 13.0.6, outside that range |
+| [glob](https://www.npmjs.com/package/glob) | 7.2.3 | `test-exclude` requires `glob@^7.1.4` | same deprecation | not reachable — 7.2.3 is the top of that range |
+| [inflight](https://www.npmjs.com/package/inflight) | 1.0.6 | `glob@7.2.3` requires `inflight@^1.0.4` | deprecated: unsupported and leaks memory | **none exists** — 1.0.6 is the latest published version; the author points to `lru-cache` |
+
+**Why `supertest` is still pinned to 7.1.1.** This tutorial's change scope permits exactly one
+dependency addition — Jest — and no upgrade of anything already declared, so the bump is not made
+here. It is the one outstanding dependency action in this repository: whoever next owns dependency
+policy should move Supertest to 7.1.3 or later, regenerate `package-lock.json`, and re-run
+`npm ci` and `npm audit`. The three transitive deprecations cannot be fixed at all without Jest
+and `test-exclude` widening their own ranges; re-check them whenever Jest is upgraded.
+
+**Install scripts.** Exactly two packages in the lockfile declare one, and both are dev-only:
+
+- **`fsevents@2.3.3`** — optional and macOS-only (reached through `chokidar`←`nodemon` and
+  `jest-haste-map`). It is not installed at all on Linux, so its script never exists locally.
+- **`unrs-resolver@1.12.2`** — a `jest-resolve` dependency whose `postinstall` runs
+  `node postinstall.js`. npm 11 does **not** run it: its `allowScripts` gate reports the package as
+  not yet covered, and `npm install-scripts ls` shows it pending. That gate is the reason this
+  surface is inert — leave it in place. Do not `npm install-scripts approve` it, and do not install
+  with scripts forced, without a specific reason to trust that script.
+
 ## Architecture Overview
 
 ### System Architecture
