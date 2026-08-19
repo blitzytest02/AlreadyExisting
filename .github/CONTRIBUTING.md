@@ -15,8 +15,8 @@ If you encounter any bugs or issues while using the tutorial application, please
 1. **Check existing issues** - Search through existing issues to avoid duplicates
 2. **Use the bug report template** - Create a new issue using our bug report template (`.github/ISSUE_TEMPLATE/bug_report.md`)
 3. **Provide detailed information** - Include:
-   - Node.js version (we recommend v22.16.0 LTS)
-   - Express.js version (should be 5.1.0)
+   - Node.js version (we recommend the 22.x LTS line; this project is validated on v22.23.2)
+   - Express version (`npm ls express`; the committed lockfile resolves 5.2.1)
    - Operating system and version
    - Steps to reproduce the issue
    - Expected vs. actual behavior
@@ -48,8 +48,8 @@ Follow these step-by-step instructions to set up your local development environm
 
 ### Prerequisites
 
-- **Node.js v22.16.0 LTS** - This tutorial uses the latest Long Term Support version with codename 'Jod'
-- **npm** - Comes bundled with Node.js (version 11.4.1 or later)
+- **Node.js 22.x LTS** - the 'Jod' line; `package.json` requires >= 18.0.0, and this project is validated on v22.23.2. Use 20 or 22 for the development tooling, which declares narrower engine ranges than `package.json` does
+- **npm** - Comes bundled with Node.js (`package.json` requires >= 8.0.0; validated on 11.18.0)
 - **Git** - For version control
 
 ### Setup Instructions
@@ -73,12 +73,17 @@ Follow these step-by-step instructions to set up your local development environm
    ```bash
    npm install
    ```
-   This reads the `package.json` file and installs Express.js 5.1.0 and other dependencies.
+   This reads `package.json`, installs the versions `package-lock.json` pins - Express 5.2.1 and dotenv 16.6.1, plus Jest 30.4.2, nodemon 3.1.14 and Supertest 7.1.1 - and reports `added 402 packages, and audited 403 packages`.
 
-5. **Create a local environment file from the example**
+5. **Check the local environment file**
    ```bash
-   cp .env.example .env
+   [ -f .env ] || cp .env.example .env
    ```
+   `src/backend/.env` is committed, so a fresh clone already has one and this step is a
+   confirmation rather than a copy. Run the guard rather than a bare `cp`: the template does not
+   set `APP_NAME`, which the committed file does, so overwriting `.env` with it changes the app
+   name in the startup banner to the `config/index.js` fallback. `git checkout -- .env` restores
+   the committed file if that has already happened.
 
 6. **Start the development server**
    ```bash
@@ -158,7 +163,7 @@ This project follows strict coding standards to ensure code quality, maintainabi
 
 ### Framework Guidelines
 
-- **Express.js 5.1.0**: Leverage the latest features including automatic promise rejection handling
+- **Express 5.x**: Leverage its features including automatic promise rejection handling
 - **Middleware**: Use Express middleware patterns for request processing
 - **Route Organization**: Keep routes simple and focused for educational clarity
 - **Security**: This tutorial deliberately ships no security middleware. Helmet, CORS, rate limiting, authentication and input-validation layers are none of them dependencies here, so do not write guidance or code that assumes one is present — propose adding one as its own change rather than folding it into an unrelated pull request
@@ -204,17 +209,20 @@ files and reads `0%` in every column, even after you press `a` to run all the te
 ## Security Guidelines
 
 Security is important even in tutorial applications. The list below is what to aim for in code you
-contribute. It is not a description of what this project already does — `src/backend/README.md`
-records the shipped middleware's known limitations, and the two middleware modules are frozen by
-the current plan, so do not change them to satisfy an item here without that scope being agreed
-first.
+contribute, and it now describes most of what this project already does — `src/backend/README.md`
+records the shipped middleware's behaviour and the two properties it deliberately keeps. Read that
+section before changing either middleware module: its rules about what may reach a log line are
+asserted case by case in `tests/unit/requestLogger.test.js` and `tests/unit/errorHandler.test.js`,
+so a change that relaxes one fails a test rather than passing quietly.
 
 ### Security Practices
 
 - **Input Validation**: Validate all inputs, even for simple endpoints. Nothing in this project
   validates input today, and no body parser is mounted, so there is no existing pattern to copy
 - **Error Handling**: Never expose sensitive information in error messages. Note that the shipped
-  500 envelope does return the request's own path, query string included
+  500 envelope does return the request's own target, query string included — deliberately, because
+  the caller already has it and it is what lets the caller correlate the failure; the server-side
+  diagnostic for the same failure keeps only the pathname
 - **Dependencies**: Keep dependencies updated and run `npm audit` regularly. It currently reports
   zero advisories, but `npm ci` warns about four deprecated dev-only packages and one gated install
   script; `src/backend/README.md` inventories all five and which of them can actually be fixed.
@@ -226,11 +234,14 @@ first.
   disabled in `app.js`, and `errorHandler` marks its 500 response `X-Content-Type-Options:
   nosniff` because that response echoes the caller's request target. The successful `/hello`
   response carries neither a CSP nor any other hardening header
-- **Logging**: Log security events appropriately, and log the minimum that makes them useful — the
-  shipped request log records the target verbatim, and the shipped error diagnostic records the
-  request's target, query and client address but takes its headers from a fixed allow-list
-  (`host`, `content-type`, `accept`) so credentials stay out of the log, and adds the error's
-  stack in development only. Follow that pattern rather than logging `req.headers` wholesale
+- **Logging**: Log security events appropriately, and log the minimum that makes them useful. The
+  shipped middleware is the pattern to follow: both modules log the pathname rather than the target,
+  so a caller's query values never reach the log (CWE-532); the error diagnostic keeps only the
+  number of query parameters, takes its headers from a fixed allow-list (`host`, `content-type`,
+  `accept`), records the client address, and adds the error's stack in development only; and every
+  value either module writes is escaped to printable ASCII and bounded to 256 characters, so no
+  request can forge a log entry, drive the terminal reading the log, or make one request cost an
+  unbounded amount of log. Follow that rather than logging `req.headers` or `req.query` wholesale
 
 ### Vulnerability Reporting
 

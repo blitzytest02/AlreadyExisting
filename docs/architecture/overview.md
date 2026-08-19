@@ -55,7 +55,7 @@ This architecture demonstrates the flow from HTTP client requests through the No
 
 ### 2.1. HTTP Server (`server.js`)
 
-The HTTP Server component serves as the foundational entry point of the application, responsible for initializing the Node.js HTTP server, binding to a network port, and handling basic server lifecycle events. This component leverages Node.js v22.16.0 LTS for stability and long-term support.
+The HTTP Server component serves as the foundational entry point of the application, responsible for initializing the Node.js HTTP server, binding to a network port, and handling basic server lifecycle events. This component leverages the Node.js 22.x LTS line for stability and long-term support.
 
 **Primary Responsibilities:**
 - Network socket management and TCP connection handling using Node.js built-in HTTP module
@@ -65,14 +65,14 @@ The HTTP Server component serves as the foundational entry point of the applicat
 - Server lifecycle management including startup, shutdown, and error handling
 
 **Technical Specifications:**
-- **Runtime Environment**: Node.js v22.16.0 LTS with 'Jod' codename for critical updates and security support
+- **Runtime Environment**: the Node.js 22.x LTS line, codename 'Jod', for critical updates and security support; validated on v22.23.2
 - **Port Configuration**: Default port 3000, configurable via environment variables for deployment flexibility
 - **Performance Characteristics**: Server startup time < 5 seconds, request processing latency < 50ms
 - **Memory Management**: ≈ 65MB resident once running (measured with `ps -o rss=`), nearly all of it the Node.js runtime itself; request objects are short-lived and garbage-collected
 
 ### 2.2. Express Application (`app.js`)
 
-The Express Application component orchestrates the web framework functionality using Express.js 5.1.0, the latest stable release published within the last two months. This component provides the middleware architecture, routing capabilities, and request/response processing pipeline essential for HTTP request handling.
+The Express Application component orchestrates the web framework functionality using Express 5.x - the committed lockfile resolves the declared `^5.1.0` range to 5.2.1, published on 2025-12-01 according to the npm registry. This component provides the middleware architecture, routing capabilities, and request/response processing pipeline essential for HTTP request handling.
 
 **Core Functionality:**
 - **Middleware Stack Management**: Sequential request processing through configurable middleware pipeline
@@ -81,7 +81,7 @@ The Express Application component orchestrates the web framework functionality u
 - **Error Handling Coordination**: Automatic promise rejection handling and error middleware forwarding
 
 **Framework Integration Details:**
-Express 5.1.0 introduces significant improvements including middleware that can return rejected promises (automatically caught by the router as errors), enhanced security through ReDoS attack mitigation, and improved performance optimizations. The framework dropped support for Node.js versions before v18, ensuring compatibility with modern JavaScript features and security standards.
+Express 5 introduces significant improvements including middleware that can return rejected promises (automatically caught by the router as errors), enhanced security through ReDoS attack mitigation, and improved performance optimizations. The framework dropped support for Node.js versions before v18, ensuring compatibility with modern JavaScript features and security standards.
 
 **Architectural Patterns:**
 - **Middleware Pattern**: Sequential processing pipeline for request transformation and validation
@@ -102,7 +102,7 @@ The Hello Route Handler implements the core business logic for the `/hello` endp
 The handler follows a stateless design pattern where each request is processed independently without maintaining session state or persistent data. This approach demonstrates scalable API design principles while keeping the implementation simple for educational purposes.
 
 **Error Handling Integration:**
-The route handler integrates with Express 5.1.0's enhanced error handling system, where promise rejections are automatically forwarded to error handling middleware. This provides a robust foundation for handling both synchronous and asynchronous errors in a consistent manner.
+The route handler integrates with Express 5's enhanced error handling system, where promise rejections are automatically forwarded to error handling middleware. This provides a robust foundation for handling both synchronous and asynchronous errors in a consistent manner.
 
 ## 3. Data Flow
 
@@ -170,8 +170,9 @@ The system maintains a stateless design where no persistent data is stored betwe
 The application implements a console-based logging strategy using the built-in Node.js `console` methods behind a small logger utility that exposes exactly two levels. Request logging is implemented as middleware mounted ahead of the routes, so each request produces a single request log line on arrival, before routing.
 
 **Logging Implementation:**
-- **Request Logging**: Each incoming HTTP request is logged once on arrival by the `requestLogger` middleware, which records three values only: the method (`req.method`), the path (`req.originalUrl`), and the request body. No timestamp, response status, client IP, or user agent is captured
+- **Request Logging**: Each incoming HTTP request is logged once on arrival by the `requestLogger` middleware, which records three values only: the method (`req.method`), the pathname of the target (`req.originalUrl` up to the first `?` or `#`), and the request body. No timestamp, response status, client IP, or user agent is captured
 - **Request Body Handling**: Object bodies are serialized with `JSON.stringify`, primitive bodies are converted with `String`, and requests carrying no body (the normal `GET /hello` case) are logged as `{}`. If serialization throws, the body is logged as `[Object - Unable to serialize]` and an additional error entry records the failure
+- **Log Output Neutralization**: Every value either middleware writes is treated as untrusted, because every value in a log line came from the client. Three rules apply: the query string and fragment are cut off the target, so a caller's values never reach the log (CWE-532); anything outside printable ASCII is replaced with inert `\uXXXX` text, so no request can forge a second log entry, drive the terminal reading the log, or reverse how a line displays; and every value is bounded to 256 characters with the number of dropped characters stated, so one request cannot cost an unbounded amount of log
 - **Error Logging**: Errors are logged with full stack traces and contextual information for debugging
 - **Response and Timing Logging**: Not implemented. The request logger never reads or modifies the response object, so response status codes, processing times, and request correlation identifiers are neither measured nor logged
 - **Log Levels**: Exactly two levels exist: `info` writes to stdout through `console.log` and `error` writes to stderr through `console.error`. Each is prefixed with `[INFO]:` or `[ERROR]:` only when `NODE_ENV` is `development`
@@ -186,7 +187,7 @@ The logger passes its arguments straight to `console`, which joins them with spa
 
 ### 4.2. Error Handling
 
-The application implements a comprehensive error handling strategy leveraging Express.js 5.1.0's enhanced promise support and automatic error forwarding capabilities. Error handling is centralized through middleware so that every forwarded error produces the same response shape and the error's own detail — its message, name and stack — stays server-side. That centralization is not by itself a guarantee of non-disclosure: the envelope still returns the request's own path, and the server-side diagnostic records the request's target, query and client address, so both are described precisely below. What the diagnostic deliberately does not record is the request's credentials: its headers come from a fixed allow-list rather than from `req.headers` wholesale.
+The application implements a comprehensive error handling strategy leveraging Express 5's enhanced promise support and automatic error forwarding capabilities. Error handling is centralized through middleware so that every forwarded error produces the same response shape and the error's own detail — its message, name and stack — stays server-side. That centralization is not by itself a guarantee of non-disclosure: the envelope still returns the request's own target, and the server-side diagnostic records the request's pathname and client address, so both are described precisely below. What the diagnostic deliberately does not record is anything the caller chose: its headers come from a fixed allow-list rather than from `req.headers` wholesale, the query string is reduced to a parameter count, and every value it does record is escaped to printable ASCII and bounded.
 
 **Error Handling Architecture:**
 - **Route-Level Errors**: Errors thrown in route handlers are automatically caught by Express error middleware
@@ -196,11 +197,11 @@ The application implements a comprehensive error handling strategy leveraging Ex
 
 **Error Response Categories:**
 - **404 Not Found**: Express's default 404 response, produced for requests to non-existent paths and equally for unmatched method/route pairs such as `POST /hello`; it is served as `text/html; charset=utf-8` with Express's default HTML error page (for example `Cannot POST /hello`)
-- **500 Internal Server Error**: Produced by the `errorHandler` middleware for application errors forwarded to it. The `error` string is always the generic `Internal Server Error`, so the failure's own detail is never disclosed; the accompanying `path` field is not generic, because it repeats the request's target including any query string
+- **500 Internal Server Error**: Produced by the `errorHandler` middleware for application errors forwarded to it. The `error` string is always the generic `Internal Server Error`, so the failure's own detail is never disclosed; the accompanying `path` field is not generic, because it repeats the request's target including any query string — deliberately, since the caller already has that value and it is what lets the caller correlate the failure. The server-side log records only the pathname of the same target
 
 **Error Handler Behavior (`middleware/errorHandler.js`):**
 - **Registration**: A named export (`module.exports = { errorHandler }`) using the four-argument Express error signature `(err, req, res, next)`, mounted last in `app.js` so it receives errors forwarded from every preceding layer
-- **Diagnostic Logging**: One error log entry records the error message and name together with the request URL, method, params, and query, plus an ISO timestamp, the client IP, and the request's `host`, `content-type` and `accept` headers — those three by name from a fixed allow-list (`RECORDED_REQUEST_HEADERS`), so an `Authorization` header, a `Cookie` or an API-key header is not written to the log (CWE-532). The error's stack is added in development only, because every frame in a stack names an absolute filesystem path
+- **Diagnostic Logging**: One error log entry records the error message and name together with the request pathname (`requestPath`), method, route params, and the number of query parameters the target carried (`requestQueryParameterCount`), plus an ISO timestamp, the client IP, and the request's `host`, `content-type` and `accept` headers — those three by name from a fixed allow-list (`RECORDED_REQUEST_HEADERS`), so an `Authorization` header, a `Cookie` or an API-key header is not written to the log (CWE-532). The query values themselves are not recorded at all: Express percent-decodes them into `req.query`, so recording them would put both a live secret and a genuine control character in the log. Every value that is recorded is escaped to printable ASCII and bounded to 256 characters. The error's stack is added in development only, because every frame in a stack names an absolute filesystem path
 - **Client Response**: Status `500` with a JSON envelope of exactly four fields: `error` (the generic string `Internal Server Error`), `status`, `timestamp`, and `path` (`req.originalUrl || req.url`). The detail stays in the log: the client is told that the request failed and which path failed, and nothing about how the server is built. The response also carries `X-Content-Type-Options: nosniff`, set by the handler itself: because `path` repeats the caller's target verbatim, a target carrying raw markup ends up inside a JSON body, and the header is what stops a content-sniffing client rendering that body as HTML — the same header Express's own not-found response sends. It is the only header this application sets on a response, and it is set on the 500 alone
 - **Termination**: The handler deliberately does not call `next()`, ending the request-response cycle; it never produces a 404, because unmatched routes fall through to Express's default 404 handling instead
 

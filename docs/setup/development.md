@@ -1,6 +1,6 @@
 # Local Development Setup Guide
 
-This comprehensive guide provides step-by-step instructions for setting up the Node.js tutorial application on your local machine for development and testing purposes. The setup process creates a robust development environment using Node.js v22.16.0 LTS and Express.js 5.1.0.
+This comprehensive guide provides step-by-step instructions for setting up the Node.js tutorial application on your local machine for development and testing purposes. The setup process creates a robust development environment on Node.js 22.x LTS with Express 5.x - validated on Node v22.23.2, npm 11.18.0 and Express 5.2.1.
 
 ## Table of Contents
 
@@ -22,9 +22,10 @@ Before you begin, ensure you have the following software installed on your syste
 ### 1.1 Core Requirements
 
 #### Node.js (Required)
-- **Version**: Node.js v22.16.0 LTS or higher
-- **Minimum**: Node.js v18.0.0 (Express.js 5.1.0 requirement)
-- **Justification**: Node.js v22 with codename 'Jod' has officially moved into Active LTS phase, ensuring critical updates and security support for years to come
+- **Validated on**: Node.js v22.23.2 (the 22.x LTS line, codename 'Jod')
+- **Minimum**: Node.js v18.0.0, which is what `package.json` declares (Express 5 requires 18 or higher)
+- **Practical floor**: Node.js 20 or 22 for `npm ci`, `npm test` and `npm run dev` - Jest 30 and nodemon's dependency tree declare narrower engine ranges than `package.json` does, and on 18.x npm reports them as unsupported
+- **Justification**: the 22.x line is an LTS line, so it receives critical updates and security support; check <https://nodejs.org/en/about/previous-releases> for the phase it is in now
 
 **Installation Verification:**
 ```bash
@@ -36,13 +37,13 @@ node --version
 
 **LTS Benefits:**
 - Production applications should only use Active LTS or Maintenance LTS releases
-- Node.js v22.x integrates V8 12.4 JavaScript engine with performance optimizations
+- Node.js v22.x integrates the V8 12.4 JavaScript engine with performance optimizations (v22.23.2 reports `12.4.254.21-node.56` in `process.versions.v8`)
 - Cross-platform compatibility (Windows, macOS, Linux)
 - Enhanced security with ReDoS attack mitigation
 
 #### npm Package Manager (Required)
-- **Version**: npm v11.4.1 or higher
-- **Minimum**: npm v8.0.0
+- **Validated on**: npm 11.18.0
+- **Minimum**: npm v8.0.0, which is what `package.json` declares
 - **Status**: Bundled with Node.js installation
 
 **Installation Verification:**
@@ -198,10 +199,15 @@ npm install
 ```
 
 **Installation Process Details:**
-- Downloads Express.js 5.1.0 and related packages
-- Creates `node_modules` directory with all dependencies
-- Generates `package-lock.json` for version locking
-- Installs approximately 50+ packages including transitive dependencies
+- Downloads Express 5.2.1, dotenv 16.6.1, and the three development packages - Jest 30.4.2,
+  nodemon 3.1.14 and Supertest 7.1.1 - exactly as `package-lock.json` pins them
+- Creates the `node_modules` directory with all dependencies: 292 top-level directories
+- Leaves `package-lock.json` untouched, because it already satisfies `package.json`. It is only
+  written when the two disagree, and `npm ci` fails in that situation instead of reconciling
+- Reports `added 402 packages, and audited 403 packages`, and `found 0 vulnerabilities`, on a
+  first install. A second run with `node_modules` already in place reports `up to date, audited 403
+  packages` instead. Four deprecation warnings and one skipped install script are expected in both
+  cases; `src/backend/README.md` inventories all five
 
 **Installation Verification:**
 ```bash
@@ -242,15 +248,25 @@ The application uses environment variables for configuration management. This se
 
 ### 3.1 Environment File Creation
 
-#### Step 1: Copy Environment Template
+#### Step 1: Confirm the Environment File
 
-Create your local environment configuration by copying the example file:
+A working `.env` is committed at `src/backend/.env`, so a fresh clone already has one. Confirm it
+is there, and create one from the template only if it is missing:
 
 ```bash
 cd src/backend
 
-cp .env.example .env
+[ -f .env ] || cp .env.example .env
 ```
+
+Use the guard rather than a bare `cp .env.example .env`. The template is not a copy of the
+committed file: `.env` sets `APP_NAME=nodejs-tutorial-hello-world`, and `.env.example` does not set
+`APP_NAME` at all. Overwriting `.env` with the template therefore drops that variable, and
+`config/index.js` falls back to `node-tutorial-app` — so the startup line this guide documents as
+`🚀 App Name: nodejs-tutorial-hello-world` becomes `🚀 App Name: node-tutorial-app`. Every other
+setting is identical in the two files, so nothing else about the application changes; what changes
+is that the transcript stops matching. If you have already overwritten it, `git checkout --
+src/backend/.env` restores the committed file.
 
 #### Step 2: Review Environment Template
 
@@ -309,23 +325,40 @@ PORT=8080
 
 #### Port Conflict Resolution
 
-Check for port conflicts before starting the server:
+Check whether the port is free before starting the server. This check needs nothing but the Node
+you have already installed, so it works the same on Windows, macOS and Linux and inside a
+container — it asks the operating system for the port and reports what it is told:
 
 ```bash
-lsof -i :3000
-
-netstat -ano | findstr :3000
+node -e "const s=require('net').createServer();s.once('error',e=>console.log(e.code==='EADDRINUSE'?'port 3000 is IN USE':'probe failed: '+e.code));s.once('listening',()=>s.close(()=>console.log('port 3000 is FREE')));s.listen(3000)"
 ```
 
-If the port belongs to a server you started, stop it with `Ctrl+C` in its own terminal. If that terminal is gone, identify the owning process first and then ask it to shut down gracefully:
+It prints `port 3000 is FREE` or `port 3000 is IN USE`. Substitute the port you intend to use;
+`PORT=8080 node -e "…s.listen(Number(process.env.PORT))"` works too if you would rather not edit
+the line.
+
+A port inspector tells you *which* process holds the port, which the probe above deliberately does
+not. Those tools are separate installs and none of them is guaranteed to be present — a slim
+container image or a fresh Linux install often has none of `lsof`, `ss`, `netstat` or `fuser`, and
+a missing one exits `127` with `command not found` rather than telling you anything about the port.
+Run whichever your machine actually has:
 
 ```bash
-# Linux/macOS: confirm which process owns the port, then signal that PID only
+# Linux/macOS, if lsof is installed
 lsof -i :3000 -sTCP:LISTEN     # note the PID and command
-kill <PID>                     # graceful SIGTERM
 
-# Windows: confirm the PID from the netstat output above, then signal that PID only
+# Linux, if iproute2 is installed
+ss -lptn 'sport = :3000'
+
+# Windows, in PowerShell (no extra install needed)
+Get-NetTCPConnection -LocalPort 3000 -State Listen | Select-Object OwningProcess
 ```
+
+If the port belongs to a server you started, stop it with `Ctrl+C` in its own terminal — that needs
+no tooling at all and is the remedy to reach for first. If that terminal is gone and you have one of
+the inspectors above, ask the process it names to shut down gracefully with `kill <PID>` (or
+`Stop-Process -Id <PID>` on Windows). If you have none of them, set a different `PORT` as shown
+above and move on; nothing in this tutorial depends on port 3000 specifically.
 
 ### 3.3 Environment Validation
 
@@ -548,15 +581,25 @@ http GET localhost:3000/hello
 
 #### Process Status Check
 
-Verify the server process is running correctly:
+Verify the server process is running correctly. The request itself is the most direct check, and it
+needs nothing beyond curl:
 
 ```bash
-ps aux | grep node
-
-netstat -tulpn | grep 3000  # Linux
-netstat -an | grep 3000     # macOS
-netstat -an | findstr 3000  # Windows
+curl -sS -o /dev/null -w "%{http_code}\n" http://localhost:3000/hello   # prints 200 when it is up
 ```
+
+To confirm the port is held rather than free — useful when the server is starting or has just been
+stopped — reuse the portable probe from
+[§3.2 Port Conflict Resolution](#port-conflict-resolution). It prints `port 3000 is IN USE` while
+the server holds it:
+
+```bash
+node -e "const s=require('net').createServer();s.once('error',e=>console.log(e.code==='EADDRINUSE'?'port 3000 is IN USE':'probe failed: '+e.code));s.once('listening',()=>s.close(()=>console.log('port 3000 is FREE')));s.listen(3000)"
+```
+
+`ps aux | grep node` lists the process on Linux and macOS. `netstat`, `ss` and `lsof` all report the
+listening socket too, but each is a separate install and a slim environment may have none of them —
+see the note in §3.2 before relying on one.
 
 #### Performance Verification
 
@@ -614,10 +657,10 @@ Verify proper logging functionality:
 
 **Request Carrying a Query String** (`curl "http://localhost:3000/hello?greeting=world"`)**:**
 ```
-[INFO]: HTTP Request - Method: GET Path: /hello?greeting=world Body: {}
+[INFO]: HTTP Request - Method: GET Path: /hello Body: {}
 ```
 
-The request logger runs before routing, so every request produces exactly one line like the samples above: method, path and body only, with no status code, response time, client IP or user agent. The path is `req.originalUrl` exactly as the client sent it — an unmatched target and a query string both appear verbatim, which is worth knowing before you put anything sensitive in a URL. The body is `{}` for any request without one, and that is every request here because no body parser is mounted. The `[INFO]:` prefix is added only when `NODE_ENV` is `development`; other environments log the same message without it. An unmatched path is logged in exactly the same way and is then answered by Express's built-in 404 handler, so no additional log line follows.
+The request logger runs before routing, so every request produces exactly one line like the samples above: method, pathname and body only, with no status code, response time, client IP or user agent. The `Path:` value is the pathname of `req.originalUrl` — the target up to the first `?` or `#` — so the third sample logs `/hello` for a request to `/hello?greeting=world`. That is deliberate: a query string is where a caller's values live, and a log line is read by more people and kept for longer than the request that produced it. Two further rules apply to every value in the line: anything outside printable ASCII is written as inert `\uXXXX` text, and each value is cut off at 256 characters with the number of dropped characters stated. An unmatched target appears in full, because there is nothing in it to remove. The body is `{}` for any request without one, and that is every request here because no body parser is mounted. The `[INFO]:` prefix is added only when `NODE_ENV` is `development`; other environments log the same message without it. An unmatched path is logged in exactly the same way and is then answered by Express's built-in 404 handler, so no additional log line follows.
 
 ## 6. Automated Setup
 
@@ -655,17 +698,20 @@ chmod +x infrastructure/scripts/setup.sh
 #### Phase 1: Prerequisites Verification
 
 **What it checks:**
-- Node.js version compatibility (>= v18.0.0, target v22.16.0)
-- npm version verification (>= v8.0.0, target v11.4.1+)
+- Node.js version compatibility (the script requires >= v18.0.0)
+- npm version verification (the script requires >= v8.0.0)
 - Docker installation and daemon status
 - Project structure validation
 
-**Sample Output:**
+**Sample Output** — the version numbers are whatever your machine reports, because the script prints
+what it detected rather than a fixed value (it strips the leading `v` from Node's, and takes the
+first version-shaped number out of `docker --version`). On the environment this guide is validated
+on they read `22.23.2`, `11.18.0` and `29.7.0`:
 ```
 [INFO] Phase 1/3: Prerequisites Verification
-[SUCCESS] Node.js version 22.16.0 detected (minimum v18.0.0 required)
-[SUCCESS] npm version 11.4.1 detected (minimum v8.0.0 required)
-[SUCCESS] Docker version 24.0.0 detected and daemon is running
+[SUCCESS] Node.js version 22.23.2 detected (minimum v18.0.0 required)
+[SUCCESS] npm version 11.18.0 detected (minimum v8.0.0 required)
+[SUCCESS] Docker version 29.7.0 detected and daemon is running
 [SUCCESS] All system prerequisites verified successfully
 ```
 
@@ -682,7 +728,7 @@ chmod +x infrastructure/scripts/setup.sh
 [INFO] Phase 2/3: Node.js Dependency Installation
 [INFO] Installing dependencies from package.json specification
 [SUCCESS] npm dependencies installed successfully
-[INFO] Created node_modules directory with 156 packages
+[INFO] Created node_modules directory with 292 packages
 [SUCCESS] Security audit completed - no critical vulnerabilities found
 ```
 
@@ -785,22 +831,24 @@ npm run dev
   request and startup lines carry none - the error diagnostic and the shutdown line each record
   one explicitly in the text they log. There is no response or status-code log, no request
   duration and no metrics — the request logger never touches the response object
-- The path is `req.originalUrl` exactly as the client sent it, query string included, and the
+- The path is the pathname of `req.originalUrl` — the target up to the first `?` or `#` — and the
   method is `req.method`. The body is serialized with `JSON.stringify` when it is an object,
   converted with `String` when it is a primitive, and reported as `{}` when there is none —
-  which is every request in this tutorial, since no body parser is mounted. Whatever a client
-  puts in the URL therefore appears in the console, so keep credentials out of request targets
-  when you extend this project
+  which is every request in this tutorial, since no body parser is mounted. A query string a
+  client puts in the target does not appear in the console, and every value that does appear is
+  escaped to printable ASCII and bounded to 256 characters
 - The `[INFO]:`/`[ERROR]:` prefixes, and the configuration summary printed at startup, appear
   because `NODE_ENV` is `development`
 - An error forwarded to the error handler produces one diagnostic entry recording the error's
-  message and name together with the request URL, method, params and query, an ISO timestamp, the
-  client address and the request's `host`, `content-type` and `accept` headers — those three from
-  a fixed allow-list, so an `Authorization` header or a `Cookie` never reaches the log — plus the
-  error's stack in development only. Most of that stays server-side, but not
+  message and name together with the request pathname, method, route params, the number of query
+  parameters the target carried, an ISO timestamp, the client address and the request's `host`,
+  `content-type` and `accept` headers — those three from a fixed allow-list, so an `Authorization`
+  header or a `Cookie` never reaches the log — plus the error's stack in development only. The
+  query's own values are not recorded, and every value that is recorded is escaped and bounded
+  exactly as in the request line above. Most of that stays server-side, but not
   all of it, so take the envelope field by field rather than assuming it is generic. Omitted from
   the client entirely: the message, stack and name, the method, the headers, the params, the
-  query and the client address — and `error` is always the fixed string
+  query count and the client address — and `error` is always the fixed string
   `Internal Server Error`. Returned to the client: `status`, a `timestamp`, and `path`, which
   repeats `req.originalUrl || req.url` with the query string included, so the caller gets back
   the target it sent. `docs/architecture/overview.md` states the field-by-field contract
@@ -912,28 +960,43 @@ Comprehensive troubleshooting guide for common development environment issues.
 **Problem**: Port 3000 is already in use by another process.
 
 **Diagnosis:**
+
+Confirm the port really is taken, using only the Node you already have — this works on every
+platform and in a container with no extra tooling:
+
 ```bash
-lsof -i :3000          # Linux/macOS
-netstat -ano | findstr :3000  # Windows
+node -e "const s=require('net').createServer();s.once('error',e=>console.log(e.code==='EADDRINUSE'?'port 3000 is IN USE':'probe failed: '+e.code));s.once('listening',()=>s.close(()=>console.log('port 3000 is FREE')));s.listen(3000)"
 ```
+
+To learn *which* process holds it you need a port inspector, and none is guaranteed to be installed
+(see [§3.2 Port Conflict Resolution](#port-conflict-resolution)). Run whichever your machine has —
+`lsof -i :3000` or `ss -lptn 'sport = :3000'` on Linux, `lsof -i :3000` on macOS,
+`Get-NetTCPConnection -LocalPort 3000 -State Listen` in Windows PowerShell. A tool that is not
+installed exits `127` with `command not found`, which says nothing about the port.
 
 **Solutions:**
 
 1. **Stop the Conflicting Process:**
-   Prefer `Ctrl+C` in the terminal that owns the process. Otherwise verify which PID holds
-   the port and signal only that PID, so an unrelated process is never terminated:
+   Prefer `Ctrl+C` in the terminal that owns the process — it needs no tooling. Otherwise verify
+   which PID holds the port with one of the inspectors above and signal only that PID, so an
+   unrelated process is never terminated:
    ```bash
    # Linux/macOS: confirm the owner, then request a graceful shutdown
-   lsof -i :3000 -sTCP:LISTEN     # note the PID and command name
+   lsof -i :3000 -sTCP:LISTEN     # note the PID and command name (needs lsof)
    kill <PID>                     # SIGTERM; the process can clean up
    
-   # Windows: confirm the PID, then request a graceful shutdown
-   netstat -ano | findstr :3000
-   taskkill /PID <PID>
+   # Windows PowerShell: confirm the PID, then request a graceful shutdown
+   Get-NetTCPConnection -LocalPort 3000 -State Listen | Select-Object OwningProcess
+   Stop-Process -Id <PID>
    ```
    Only if the verified PID ignores SIGTERM should you escalate to `kill -9 <PID>`
-   (Windows: `taskkill /PID <PID> /F`). SIGKILL gives the process no chance to clean up,
-   so it is a last resort rather than the first step.
+   (Windows: `Stop-Process -Id <PID> -Force`). SIGKILL gives the process no chance to clean up,
+   so it is a last resort rather than the first step. Never match on a process *name* to pick the
+   target: `pkill node` or `taskkill /IM node.exe` would also end unrelated Node processes,
+   including ones your editor or another project started.
+
+   If you have no inspector at all, skip straight to a different port below — it is faster than
+   installing one, and nothing in this tutorial needs port 3000 specifically.
 
 2. **Use Alternative Port:**
    ```bash
@@ -964,21 +1027,24 @@ PORT=3000 npm start  # Port 3000 doesn't require sudo
 
 #### Node.js Version Incompatibility
 
-**Problem**: Express.js 5.1.0 requires Node.js >= 18.0.0.
+**Problem**: Express 5 requires Node.js >= 18.0.0, and the development tools require 20 or 22.
 
 **Diagnosis:**
 ```bash
 node --version
 ```
 
-**Solution:**
+**Solution** — install a 22.x runtime and select it. `nvm install 22` takes the newest 22.x
+release, which is the version to prefer; pin an exact patch only if you need to match another
+machine, and `v22.23.2` is what this guide is validated on:
 ```bash
+# Newest 22.x, which is what most machines should run
+nvm install 22
+nvm use 22
 
-nvm install 22.16.0
-nvm use 22.16.0
-
-nvm install 22.16.0
-nvm use 22.16.0
+# Or the exact patch this guide is validated on
+nvm install 22.23.2
+nvm use 22.23.2
 ```
 
 ### 8.2 Dependency Installation Issues
@@ -1103,9 +1169,17 @@ node -e "require('dotenv').config(); console.log(process.env.PORT);"
 ```
 
 **Solutions:**
-1. **Create .env File:**
+1. **Restore or Create the .env File:**
+   The repository commits a working `src/backend/.env`, so the first thing to try is restoring it —
+   that brings back `APP_NAME` and every other setting exactly as this guide documents them:
    ```bash
-   cp .env.example .env
+   git checkout -- .env
+   ```
+   Only if you are working outside a clone, or have deliberately removed the file from version
+   control, create one from the template instead. It omits `APP_NAME`, so the startup banner will
+   read `node-tutorial-app`:
+   ```bash
+   [ -f .env ] || cp .env.example .env
    ```
 
 2. **Fix .env Syntax:**
@@ -1150,9 +1224,11 @@ ps aux | grep node
    ```
    Then restart this server only: press `Ctrl+C` in the terminal that started it and run
    `npm start` again. If that terminal is no longer available, find the process holding
-   the port and signal that single PID:
+   the port with whichever inspector this machine has — none of them is guaranteed to be
+   installed, as [§3.2 Port Conflict Resolution](#port-conflict-resolution) explains — and
+   signal that single PID:
    ```bash
-   lsof -i :3000 -sTCP:LISTEN     # note the PID
+   lsof -i :3000 -sTCP:LISTEN     # note the PID (needs lsof; ss -lptn 'sport = :3000' also works)
    kill <PID>                     # graceful shutdown of that process only
    npm start
    ```
@@ -1725,8 +1801,8 @@ Production security checklist:
 
 You have successfully set up a comprehensive Node.js development environment using modern technologies and best practices. This foundation provides:
 
-- **Node.js v22.16.0 LTS**: Long-term support with enhanced security
-- **Express.js 5.1.0**: Latest web framework with promise support
+- **Node.js 22.x LTS** (validated on v22.23.2): long-term support with enhanced security
+- **Express 5.x** (5.2.1, resolved from the declared `^5.1.0`): a web framework with promise support
 - **Development Tools**: Automated restart, debugging, testing capabilities
 - **Production Readiness**: Scalable architecture and deployment options
 

@@ -27,21 +27,38 @@
  * is asserted by name, by value, by call count and by ordering, because a header set after the
  * body has been written would be too late to have any effect.
  *
- * Two properties of the diagnostic are contract rather than detail, and are asserted as such:
+ * Four properties of the diagnostic are contract rather than detail, and are asserted as such:
  *
  *   requestHeaders   copied from the allow-list ['host', 'content-type', 'accept'] rather than
  *                    from `req.headers` wholesale, so a credential the client sent in an
  *                    `Authorization` header or a `Cookie` is not written to the log (CWE-532)
+ *   requestPath      the PATHNAME of the target, not the target. The query string is where a
+ *                    caller's values live - `?password=...` - and Express hands this handler the
+ *                    DECODED form of them in `req.query`, so recording it would put both a live
+ *                    secret and a genuine control character in a log file. What is kept instead is
+ *                    `requestQueryParameterCount`: that a query was present, and how large
+ *   every value      escaped to printable ASCII and bounded to 256 characters, so no caller can
+ *                    forge a log entry, drive the terminal reading the log, or make one request
+ *                    cost an unbounded amount of it
  *   errorStack       present only when `config.nodeEnv === 'development'`, because every frame
  *                    in it names an absolute filesystem path
  *
+ * The response envelope is deliberately NOT subject to the pathname rule: its `path` field hands
+ * the caller its own target back verbatim, because that is what lets the caller correlate the
+ * failure with the request it sent, and the caller already has the value. The log and the envelope
+ * therefore disagree about `path` on purpose, and the fallback cases below assert both halves of
+ * that in the same breath.
+ *
  * Its branching expressions have two sides each, and both sides of each are covered here:
  *
- *   requestUrl   req.originalUrl || req.url
+ *   requestPath  req.originalUrl || req.url, then with and without a query or fragment to cut
  *   clientIP     req.ip || req.connection.remoteAddress
  *   path         req.originalUrl || req.url          (the response field)
  *   errorStack   development or not
  *   headers      present or absent, allow-listed name present or absent
+ *   params       present or absent
+ *   query        present or absent
+ *   bound        value short enough to keep, or long enough to truncate
  *
  * Note on the environment these cases run in: Jest sets `NODE_ENV=test` and `dotenv` does not
  * override a variable the environment already carries, so `config.nodeEnv` is `'test'` here and
@@ -82,18 +99,20 @@ const config = require('../../config');
  * field a test failure. That matters for a diagnostic: a field silently gaining request
  * content is precisely the change this assertion exists to catch. `userAgent` is absent by
  * design; the handler no longer reads it, because a value the client chose is not needed to
- * reproduce a server-side failure.
+ * reproduce a server-side failure. `requestQuery` is absent for the same reason and a stronger
+ * one - it held the decoded values of the caller's query string - and the count that replaced it
+ * carries what a reproduction actually needs from it.
  *
  * @constant {string[]}
  */
 const DIAGNOSTIC_KEYS = [
     'errorMessage',
     'errorName',
-    'requestUrl',
+    'requestPath',
     'requestMethod',
     'requestHeaders',
     'requestParams',
-    'requestQuery',
+    'requestQueryParameterCount',
     'timestamp',
     'clientIP'
 ];
@@ -121,6 +140,32 @@ const ALLOWED_HEADERS = ['host', 'content-type', 'accept'];
  * @constant {RegExp}
  */
 const ISO_8601 = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+
+/**
+ * The bound the handler applies to every value it records, restated here.
+ *
+ * Restated rather than imported for the same reason the allow-list above is: the handler exports
+ * one function, the bound is an internal decision, and a test that reached inside for it would be
+ * asserting the implementation rather than the contract. Stating the number here means changing
+ * the bound has to be done deliberately in both places.
+ *
+ * @constant {number}
+ */
+const MAX_LOGGED_VALUE_LENGTH = 256;
+
+/**
+ * Asserts that a recorded value consists only of printable ASCII.
+ *
+ * The property, not a re-spelling of the handler's escape, so these cases hold however the escape
+ * is written and fail if any class of interpretable character starts reaching the log again.
+ *
+ * @param {string} value - a value read back from the diagnostic
+ * @returns {void}
+ */
+function expectPrintableAscii(value) {
+    expect(typeof value).toBe('string');
+    expect(value).toMatch(/^[\x20-\x7E]*$/);
+}
 
 /**
  * Builds a fresh mock request.
@@ -385,9 +430,9 @@ describe('errorHandler middleware', () => {
             expect(diagnostic.errorMessage).toBe('bad input');
         });
 
-        it('passes the request method, params and query straight through', () => {
+        it('passes the request method through, copies the params, and counts the query', () => {
             const params = { id: '7' };
-            const query = { greeting: 'world' };
+            const query = { greeting: 'world', page: '2' };
             const request = createRequest({
                 method: 'POST',
                 params: params,
@@ -399,8 +444,62 @@ describe('errorHandler middleware', () => {
             const diagnostic = loggedDiagnostic();
 
             expect(diagnostic.requestMethod).toBe('POST');
-            expect(diagnostic.requestParams).toBe(params);
-            expect(diagnostic.requestQuery).toBe(query);
+
+            // Route parameters are named by the application, so they are recorded - but as a copy
+            // with neutralised values, never as a live view of `req.params`.
+            expect(diagnostic.requestParams).toEqual({ id: '7' });
+            expect(diagnostic.requestParams).not.toBe(params);
+
+            // The query's values are the caller's, so only their number is recorded.
+            expect(diagnostic.requestQueryParameterCount).toBe(2);
+            expect(JSON.stringify(diagnostic)).not.toContain('greeting');
+            expect(JSON.stringify(diagnostic)).not.toContain('world');
+        });
+
+        it('records a zero query count when the target carried no query string', () => {
+            errorHandler(err, req, res, next);
+
+            expect(loggedDiagnostic().requestQueryParameterCount).toBe(0);
+        });
+
+        it('records a zero query count when req.query is absent altogether', () => {
+            // Express always populates `req.query`, so this is the defensive side of the branch:
+            // a handler whose job is to answer when something has already gone wrong must not be
+            // the thing that throws.
+            const request = createRequest({ query: undefined });
+
+            errorHandler(err, request, res, next);
+
+            expect(loggedDiagnostic().requestQueryParameterCount).toBe(0);
+            expect(res.status).toHaveBeenCalledWith(500);
+            expect(res.json).toHaveBeenCalledTimes(1);
+        });
+
+        it('records an empty params object when the request carries no params at all', () => {
+            const request = createRequest({ params: undefined });
+
+            errorHandler(err, request, res, next);
+
+            expect(loggedDiagnostic().requestParams).toEqual({});
+            expect(res.status).toHaveBeenCalledWith(500);
+        });
+
+        it('neutralises both halves of a route parameter', () => {
+            // A wildcard route elsewhere can name a parameter from the target, and its value comes
+            // from the caller either way, so name and value are treated alike.
+            const request = createRequest({
+                params: { 'we\u202Eird': 'va\u001blue' }
+            });
+
+            errorHandler(err, request, res, next);
+
+            const recorded = loggedDiagnostic().requestParams;
+            const [name] = Object.keys(recorded);
+
+            expectPrintableAscii(name);
+            expectPrintableAscii(recorded[name]);
+            expect(JSON.stringify(recorded)).not.toContain('\u202E');
+            expect(JSON.stringify(recorded)).not.toContain('\u001b');
         });
 
         it('stamps the diagnostic with a round-trippable ISO-8601 timestamp', () => {
@@ -501,7 +600,7 @@ describe('errorHandler middleware', () => {
      * swap of the two would fail rather than pass unnoticed.
      */
     describe('request fallback branches', () => {
-        it('prefers originalUrl over url in both the log and the response', () => {
+        it('prefers originalUrl over url, logging its pathname and echoing it whole', () => {
             const request = createRequest({
                 originalUrl: '/hello?greeting=world',
                 url: '/rewritten-by-middleware'
@@ -509,7 +608,10 @@ describe('errorHandler middleware', () => {
 
             errorHandler(err, request, res, next);
 
-            expect(loggedDiagnostic().requestUrl).toBe('/hello?greeting=world');
+            // Both read `req.originalUrl || req.url`, and they part company after that: the log
+            // keeps the part that identifies the route, and the envelope hands the caller back the
+            // target it sent. Asserted together because separately each looks like an oversight.
+            expect(loggedDiagnostic().requestPath).toBe('/hello');
             expect(sentPayload(res).path).toBe('/hello?greeting=world');
         });
 
@@ -518,8 +620,22 @@ describe('errorHandler middleware', () => {
 
             errorHandler(err, request, res, next);
 
-            expect(loggedDiagnostic().requestUrl).toBe('/hello');
+            expect(loggedDiagnostic().requestPath).toBe('/hello');
             expect(sentPayload(res).path).toBe('/hello');
+        });
+
+        it('logs the pathname of the fallback url too, not the whole fallback target', () => {
+            // The cut is applied after the fallback, not to `originalUrl` alone, so a rewritten
+            // `req.url` carrying a query is treated exactly like an original one.
+            const request = createRequest({
+                originalUrl: undefined,
+                url: '/hello?password=hunter2'
+            });
+
+            errorHandler(err, request, res, next);
+
+            expect(loggedDiagnostic().requestPath).toBe('/hello');
+            expect(JSON.stringify(loggedDiagnostic())).not.toContain('hunter2');
         });
 
         it('uses req.ip for the client address when Express resolved one', () => {
@@ -558,75 +674,138 @@ describe('errorHandler middleware', () => {
     });
 
     /**
-     * Log-integrity characterisation for terminal and Unicode display controls.
+     * Log-integrity: the decoded query, header values, and everything else the caller supplies.
      *
-     * This is the reachable half of the control-character gap, and the reason it belongs in this
-     * suite rather than the request logger's. `requestLogger` reads `req.originalUrl`, which keeps
-     * percent-encoding intact, so `%1B` stays three characters there and never becomes ESC. This
-     * handler reads `req.query`, and Express's query parser percent-DECODES, so a target of
-     * `?x=%E2%80%AE%1B%5B2J` arrives here as genuine U+202E and ESC and is written to the console
-     * unchanged. The same applies to the values of the three headers it is allowed to record -
-     * the allow-list bounds which headers reach the log, not how their values are written.
+     * This handler is where the control-character problem was reachable, and the reason is worth
+     * keeping: `requestLogger` reads `req.originalUrl`, which keeps percent-encoding intact, so
+     * `%1B` stays three characters there. This handler used to read `req.query`, and Express's
+     * query parser percent-DECODES, so a target of `?x=%E2%80%AE%1B%5B2J` arrived as genuine
+     * U+202E and ESC. Verified against a live Express app: that target yields `req.query.x` with
+     * codepoints U+202E U+001B U+005B U+0032 U+004A, while `req.originalUrl` for the identical
+     * request stays `"/t?x=%E2%80%AE%1B%5B2J"`.
      *
-     * Verified against a live Express app before these cases were written: that target yields
-     * `req.query.x` with codepoints U+202E U+001B U+005B U+0032 U+004A, while `req.originalUrl`
-     * for the identical request stays `"/t?x=%E2%80%AE%1B%5B2J"`.
+     * Two rules close it. The decoded query is not recorded at all - only how many parameters it
+     * held - and every value that IS recorded is escaped to printable ASCII and bounded. The cases
+     * below assert both: that the caller's values are absent, and that what remains is inert.
      *
-     * Reaching it needs an application error to be forwarded, and no route in this tutorial
-     * raises one, so it is latent rather than open. These cases pin the current behaviour so the
-     * gap is machine-visible rather than prose-only; when an encoder is authorised, every
-     * expectation here must be inverted to require the neutralised form.
+     * Reaching this handler needs an application error to be forwarded, and no route in this
+     * tutorial raises one, so this was latent rather than open. It is asserted here so that the
+     * guarantee is machine-checked for whoever adds the first route that can fail.
      */
-    describe('control character handling (characterisation, not endorsement)', () => {
-        it('records decoded query values verbatim, including a bidi override', () => {
+    describe('log output neutralisation', () => {
+        it('does not record a decoded query value, bidi override or otherwise', () => {
             // What Express hands the handler after decoding ?x=%E2%80%AE, not the raw target.
             const req = createRequest({ query: { x: '\u202Etxt.exe' } });
 
             errorHandler(err, req, res, next);
 
-            expect(loggedDiagnostic().requestQuery).toEqual({ x: '\u202Etxt.exe' });
+            const diagnostic = loggedDiagnostic();
+            const serialised = JSON.stringify(diagnostic);
+
+            expect(diagnostic).not.toHaveProperty('requestQuery');
+            expect(diagnostic.requestQueryParameterCount).toBe(1);
+            expect(serialised).not.toContain('txt.exe');
+            expect(serialised).not.toContain('\u202E');
         });
 
-        it('records a decoded ANSI escape sequence from a query value verbatim', () => {
+        it('does not record a decoded ANSI escape sequence from a query value', () => {
             const req = createRequest({ query: { x: '\u001b[2J' } });
 
             errorHandler(err, req, res, next);
 
-            expect(loggedDiagnostic().requestQuery.x).toBe('\u001b[2J');
+            expect(JSON.stringify(loggedDiagnostic())).not.toContain('\u001b');
+            expect(loggedDiagnostic().requestQueryParameterCount).toBe(1);
         });
 
-        it('records decoded C0 controls from a query value verbatim', () => {
+        it('does not record decoded C0 controls from a query value', () => {
             const req = createRequest({ query: { x: 'first\r\nforged' } });
 
             errorHandler(err, req, res, next);
 
-            // A CRLF inside a logged value is the log-forging shape: one entry that renders as
-            // two. Note this arrives via the decoded query, not the request target - Node's HTTP
-            // parser rejects a raw CRLF in the target with 400 before any middleware runs.
-            expect(loggedDiagnostic().requestQuery.x).toBe('first\r\nforged');
+            // The log-forging shape - one entry that renders as two - closed by the value never
+            // being recorded. It arrives via the decoded query rather than the target: Node's HTTP
+            // parser rejects a raw CRLF in a target with 400 before any middleware runs.
+            const serialised = JSON.stringify(loggedDiagnostic());
+            expect(serialised).not.toContain('forged');
+            expect(serialised).not.toContain('\r');
+            expect(serialised).not.toContain('\n');
         });
 
-        it('records Unicode separators from a query value verbatim', () => {
+        it('does not record Unicode separators from a query value', () => {
             const req = createRequest({ query: { x: 'before\u2028after\u2029end' } });
 
             errorHandler(err, req, res, next);
 
-            expect(loggedDiagnostic().requestQuery.x).toBe('before\u2028after\u2029end');
+            const serialised = JSON.stringify(loggedDiagnostic());
+            expect(serialised).not.toContain('\u2028');
+            expect(serialised).not.toContain('\u2029');
         });
 
-        it('records an allow-listed header value containing controls verbatim', () => {
-            // `accept` is allow-listed, so its value still reaches the console unencoded. The
-            // allow-list bounds WHICH headers are recorded, not how their values are written.
+        it('counts query parameters without recording any of their names or values', () => {
+            const req = createRequest({
+                query: { password: 'hunter2', token: 'abc123', redirect: '/somewhere' }
+            });
+
+            errorHandler(err, req, res, next);
+
+            const serialised = JSON.stringify(loggedDiagnostic());
+            expect(loggedDiagnostic().requestQueryParameterCount).toBe(3);
+            for (const absent of ['password', 'hunter2', 'token', 'abc123', 'somewhere']) {
+                expect(serialised).not.toContain(absent);
+            }
+        });
+
+        it('escapes an allow-listed header value containing controls', () => {
+            // `accept` is allow-listed, so its value is recorded - and neutralised on the way in.
+            // The allow-list bounds WHICH headers are recorded; it says nothing about what a
+            // client can put inside one.
             const req = createRequest({ headers: { accept: 'value\u202Ereversed' } });
 
             errorHandler(err, req, res, next);
 
-            expect(loggedDiagnostic().requestHeaders.accept).toBe('value\u202Ereversed');
+            const recorded = loggedDiagnostic().requestHeaders.accept;
+            expectPrintableAscii(recorded);
+            expect(recorded).toBe('value\\u202ereversed');
         });
 
-        it('drops a non-allow-listed header carrying controls, encoder or not', () => {
+        it('bounds an allow-listed header value and says how much it dropped', () => {
+            // One cheap request, an unbounded log line, is the amplification shape. A header is
+            // the easiest place to send a large value, so the bound is asserted there.
+            const req = createRequest({ headers: { accept: 'a'.repeat(20000) } });
+
+            errorHandler(err, req, res, next);
+
+            const recorded = loggedDiagnostic().requestHeaders.accept;
+            expectPrintableAscii(recorded);
+            expect(recorded.length).toBeLessThan(300);
+            expect(recorded).toContain(`[truncated ${20000 - MAX_LOGGED_VALUE_LENGTH} characters]`);
+        });
+
+        it('bounds the recorded pathname as well', () => {
+            const req = createRequest({ originalUrl: `/hello${'a'.repeat(15000)}?x=1` });
+
+            errorHandler(err, req, res, next);
+
+            const recorded = loggedDiagnostic().requestPath;
+            expectPrintableAscii(recorded);
+            expect(recorded.length).toBeLessThan(300);
+            expect(recorded).toContain(`[truncated ${15006 - MAX_LOGGED_VALUE_LENGTH} characters]`);
+        });
+
+        it('escapes a decoded control that reaches the pathname', () => {
+            // A caller or upstream proxy supplying an already-decoded target, which is the one
+            // route by which a control can reach the path at all.
+            const req = createRequest({ originalUrl: '/hel\u001blo\u202E?x=1' });
+
+            errorHandler(err, req, res, next);
+
+            expectPrintableAscii(loggedDiagnostic().requestPath);
+            expect(JSON.stringify(loggedDiagnostic())).not.toContain('\u001b');
+        });
+
+        it('drops a non-allow-listed header carrying controls', () => {
             // The narrower blast radius the allow-list buys: a header nobody listed cannot
-            // distort a log line, because it is not in the line.
+            // distort a log line, because it is not in the line at all.
             const req = createRequest({ headers: { 'x-note': 'value\u001b[2J\u202Ereversed' } });
 
             errorHandler(err, req, res, next);
@@ -635,14 +814,45 @@ describe('errorHandler middleware', () => {
             expect(JSON.stringify(loggedDiagnostic())).not.toContain('x-note');
         });
 
-        it('records an error message containing controls verbatim', () => {
-            // The message can be attacker-influenced whenever a handler interpolates request
-            // data into the error it throws, which is a common shape in real applications.
+        it('escapes an error message containing controls', () => {
+            // The message is attacker-influenced whenever a handler interpolates request data into
+            // the error it throws, which is a common shape in real applications - so the message
+            // is treated as text from the caller rather than text from the server.
             const controlError = new Error('failed for \u001b[2J\u202Ereversed');
 
             errorHandler(controlError, req, res, next);
 
-            expect(loggedDiagnostic().errorMessage).toBe('failed for \u001b[2J\u202Ereversed');
+            const recorded = loggedDiagnostic().errorMessage;
+            expectPrintableAscii(recorded);
+            expect(recorded).toBe('failed for \\u001b[2J\\u202ereversed');
+        });
+
+        it('bounds an error message that interpolated a large client value', () => {
+            const controlError = new Error(`rejected input: ${'x'.repeat(9000)}`);
+
+            errorHandler(controlError, req, res, next);
+
+            const recorded = loggedDiagnostic().errorMessage;
+            expect(recorded.startsWith('rejected input: xxx')).toBe(true);
+            expect(recorded).toContain('[truncated ');
+            expect(recorded.length).toBeLessThan(300);
+        });
+
+        it('leaves an ordinary diagnostic entirely unchanged', () => {
+            // The rules are invisible in normal use. This is the shape of the entry a developer
+            // actually reads, and none of it is escaped, dropped or truncated.
+            errorHandler(err, req, res, next);
+
+            const diagnostic = loggedDiagnostic();
+
+            expect(diagnostic.errorMessage).toBe('something went wrong');
+            expect(diagnostic.errorName).toBe('Error');
+            expect(diagnostic.requestPath).toBe('/hello');
+            expect(diagnostic.requestMethod).toBe('GET');
+            expect(diagnostic.requestHeaders).toEqual({ host: 'localhost:3000' });
+            expect(diagnostic.requestParams).toEqual({});
+            expect(diagnostic.requestQueryParameterCount).toBe(0);
+            expect(diagnostic.clientIP).toBe('203.0.113.24');
         });
 
         it('reflects a decoded control in the client response path when the target carries one', () => {

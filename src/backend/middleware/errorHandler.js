@@ -21,6 +21,14 @@
  *   from a fixed allow-list, so a credential a client sends in an Authorization header or a
  *   cookie is not copied into the log (CWE-532), and the stack - the one field that names
  *   absolute filesystem paths - is recorded in development only
+ * - The diagnostic records the request's pathname, never its query string. Express percent-DECODES
+ *   the query into `req.query`, so a target of `?password=hunter2` or `?x=%E2%80%AE` would
+ *   otherwise put a live secret, or a genuine bidirectional override, into a log file that
+ *   outlives the request and is read by more people than sent it. What survives is the fact that
+ *   a query was present and how many parameters it held, which is what a reproduction needs
+ * - Every value the diagnostic does record from the request is escaped to printable ASCII and
+ *   bounded to a fixed length, so no caller can forge a log line, address the terminal reading
+ *   the log, or make one request cost the operator an unbounded amount of log
  * - The response carries X-Content-Type-Options: nosniff, because its `path` field echoes the
  *   caller's own target: a request target carrying raw markup therefore appears in a JSON body,
  *   and nosniff is what stops a content-sniffing client treating that body as HTML
@@ -48,6 +56,111 @@ const { logger } = require('../utils/logger');
 const config = require('../config');
 
 /**
+ * The largest number of characters any single recorded value contributes to the diagnostic.
+ *
+ * Applied after escaping, because escaping is what can grow a value - one control character
+ * becomes six characters - and it is the text that actually reaches the console that has to be
+ * bounded. 256 is longer than any target, header or message this tutorial produces, so the cap is
+ * invisible in normal use and only takes effect on input that was trying to be large.
+ *
+ * @constant {number}
+ */
+const MAX_LOGGED_VALUE_LENGTH = 256;
+
+/**
+ * Everything that is not printable ASCII.
+ *
+ * Written as a negation rather than as a list of the characters known to be dangerous, because
+ * that list is open-ended: C0 controls, DEL, the Unicode line and paragraph separators, the
+ * bidirectional overrides, and whatever a future terminal decides to interpret. Naming the small
+ * set that is safe to pass through is the only version of this rule that does not need revisiting.
+ * A negated range also keeps literal control characters out of the pattern, which is what
+ * `no-control-regex` objects to.
+ *
+ * @constant {RegExp}
+ */
+const UNSAFE_LOG_CHARACTERS = /[^\x20-\x7E]/g;
+
+/**
+ * Replace every non-printable-ASCII character with inert `\uXXXX` text.
+ *
+ * The replacement is text, not an escape a later reader turns back into the character: `\u202e` in
+ * a log file is six printable characters and stays six printable characters. Node's own inspection
+ * of a logged object escapes C0 controls but passes U+202E and U+2028 through unchanged, so this
+ * is what closes the display-control half of the gap rather than duplicating what the runtime
+ * already does.
+ *
+ * This helper, `safeLogValue` and the bound above are deliberately identical to the copies in
+ * requestLogger.js. The two middleware modules are self-contained by design - each imports only
+ * the logger - and keeping the sanitizer local to each avoids introducing a shared source file
+ * that is neither middleware nor covered by the coverage scope this package verifies
+ * (`routes/**` and `middleware/**`). Both copies are exercised to completion by their own unit
+ * suite, so a divergence between them fails a test rather than going unnoticed.
+ *
+ * @param {string} value - Already-stringified value to neutralize
+ * @returns {string} The same text with every unsafe character replaced by its escape
+ */
+function escapeUnsafeCharacters(value) {
+    return value.replace(
+        UNSAFE_LOG_CHARACTERS,
+        (character) => `\\u${character.charCodeAt(0).toString(16).padStart(4, '0')}`
+    );
+}
+
+/**
+ * Convert an arbitrary value into text that is safe and bounded to record.
+ *
+ * `String()` is applied unconditionally so the function has one path regardless of what it is
+ * handed - a string, a header value Express delivered as an array, a number - and no caller has to
+ * decide whether conversion is needed first.
+ *
+ * When the escaped text exceeds the bound, the excess is dropped and the number of dropped
+ * characters is stated, because a truncated value that says nothing about the truncation reads
+ * like the whole value.
+ *
+ * @param {*} value - Value to record in the diagnostic
+ * @returns {string} Printable, bounded text
+ */
+function safeLogValue(value) {
+    const escaped = escapeUnsafeCharacters(String(value));
+
+    if (escaped.length <= MAX_LOGGED_VALUE_LENGTH) {
+        return escaped;
+    }
+
+    const droppedCharacters = escaped.length - MAX_LOGGED_VALUE_LENGTH;
+
+    return `${escaped.slice(0, MAX_LOGGED_VALUE_LENGTH)}[truncated ${droppedCharacters} characters]`;
+}
+
+/**
+ * The request's pathname, neutralized and bounded, for the diagnostic.
+ *
+ * `req.originalUrl` is preferred over `req.url` for the same reason the response envelope prefers
+ * it: it is the target as the server received it. The difference is what happens next - the
+ * envelope hands the caller its own target back verbatim so a failure can be correlated with the
+ * request that caused it, while the log keeps only the part that identifies the route. The query
+ * string is where values live, and a log file is the wrong place for them.
+ *
+ * Nothing is decoded here. The raw target is what the client sent; decoding it would turn `%0A`
+ * into a real newline and `%E2%80%AE` into a real override - precisely the input the escape step
+ * exists to keep out.
+ *
+ * @param {Object} req - Express request object
+ * @returns {string} The pathname of the request target, escaped and bounded
+ */
+function loggedRequestPath(req) {
+    const target = String(req.originalUrl || req.url);
+    const boundaryIndex = target.search(/[?#]/);
+
+    if (boundaryIndex === -1) {
+        return safeLogValue(target);
+    }
+
+    return safeLogValue(target.slice(0, boundaryIndex));
+}
+
+/**
  * The request headers the diagnostic is allowed to record, by lower-case name.
  *
  * Express lower-cases incoming header names, so these are compared as written. The three chosen
@@ -71,8 +184,13 @@ const RECORDED_REQUEST_HEADERS = ['host', 'content-type', 'accept'];
  * an error response is not sent: a request object without headers would otherwise throw here,
  * inside the handler whose job is to answer when something has already gone wrong.
  *
+ * Values are neutralized on the way out. The allow-list decides WHICH headers are recorded; it
+ * says nothing about what a client can put inside one, and `Accept` is as free-form as any other
+ * header. Escaping and bounding each value is what makes the recorded set safe to write.
+ *
  * @param {Object} [headers] - the request's header set, as Express assembled it
- * @returns {Object} a new object holding only the allow-listed headers that were present
+ * @returns {Object} a new object holding only the allow-listed headers that were present, with
+ *                   every value escaped to printable ASCII and bounded
  */
 function recordedRequestHeaders(headers) {
     const recorded = {};
@@ -83,8 +201,36 @@ function recordedRequestHeaders(headers) {
 
     for (const name of RECORDED_REQUEST_HEADERS) {
         if (headers[name] !== undefined) {
-            recorded[name] = headers[name];
+            recorded[name] = safeLogValue(headers[name]);
         }
+    }
+
+    return recorded;
+}
+
+/**
+ * Copies a request's route parameters, neutralizing names and values.
+ *
+ * Route parameters are named by the application - this tutorial's single route has none - but
+ * their values come from the caller's target, and a router elsewhere could name one from a
+ * wildcard. Both halves are therefore escaped and bounded, and the result is a new object rather
+ * than `req.params` itself, so the diagnostic cannot be a live view of the request.
+ *
+ * The guard mirrors the one above: a request object without `params` must not be the reason an
+ * error response is not sent.
+ *
+ * @param {Object} [params] - the request's route parameters, as Express matched them
+ * @returns {Object} a new object holding the same parameters, escaped and bounded
+ */
+function recordedRouteParams(params) {
+    const recorded = {};
+
+    if (!params) {
+        return recorded;
+    }
+
+    for (const name of Object.keys(params)) {
+        recorded[safeLogValue(name)] = safeLogValue(params[name]);
     }
 
     return recorded;
@@ -107,7 +253,8 @@ function recordedRequestHeaders(headers) {
  * Error Handling Flow:
  * 1. Receives error from Express framework (manual next(err) or automatic promise rejection)
  * 2. Logs the error and the request context needed to reproduce it - the request's headers are
- *    recorded from an allow-list, and the stack trace is included in development only
+ *    recorded from an allow-list, the pathname is recorded in place of the full target, every
+ *    recorded value is escaped and bounded, and the stack trace is included in development only
  * 3. Sets HTTP 500 Internal Server Error status code
  * 4. Sets X-Content-Type-Options: nosniff on the response
  * 5. Sends generic JSON error response to client
@@ -155,26 +302,38 @@ function errorHandler(err, req, res, next) {
     // Step 1: Log the error details needed to diagnose the failure, and only those
     // This provides developers with:
     // - Error message and type
-    // - Request context (target, method, allow-listed headers, params, query) for reproduction
+    // - Request context (pathname, method, allow-listed headers, route params, and how many query
+    //   parameters the target carried) for reproduction
     // - A timestamp and the client address
     // - The stack trace, in development only
     //
-    // What it deliberately does not provide is the request's own credentials. The headers are
-    // copied from a fixed allow-list rather than wholesale, because `req.headers` carries
-    // whatever the client sent - `Authorization`, `Cookie`, an API key - and a diagnostic that
-    // copies it out puts those values in a log file, which is the weakness CWE-532 describes.
-    // A failure is reproducible without them.
+    // What it deliberately does not provide is the request's own credentials, or any value the
+    // caller chose. The headers are copied from a fixed allow-list rather than wholesale, because
+    // `req.headers` carries whatever the client sent - `Authorization`, `Cookie`, an API key - and
+    // a diagnostic that copies it out puts those values in a log file, which is the weakness
+    // CWE-532 describes. The same reasoning removes the query string: `req.query` is the decoded
+    // form of `?password=hunter2`, and `?x=%E2%80%AE` decodes to a genuine display override, so
+    // the values are dropped and only their number is kept. Everything that does remain is escaped
+    // to printable ASCII and bounded, so one request cannot forge a second log line, address the
+    // terminal reading the log, or cost the operator an unbounded amount of it. A failure is
+    // reproducible without any of what was removed.
     const diagnostic = {
-        // Error details for debugging
-        errorMessage: err.message,
-        errorName: err.name,
+        // Error details for debugging. The message is neutralized because a handler that
+        // interpolates request data into the error it throws - a common shape - makes the message
+        // partly the caller's text; the name is neutralized for the same reason, since a thrown
+        // value's `name` is only conventionally the constructor's.
+        errorMessage: safeLogValue(err.message),
+        errorName: safeLogValue(err.name),
 
-        // Request context for error reproduction and analysis
-        requestUrl: req.originalUrl || req.url,
+        // Request context for error reproduction and analysis. The pathname identifies the route
+        // that failed; the query string is deliberately not recorded, and what remains of it is
+        // the count below - enough to know a query was present and how large, without writing the
+        // values a caller put in it into a log file.
+        requestPath: loggedRequestPath(req),
         requestMethod: req.method,
         requestHeaders: recordedRequestHeaders(req.headers),
-        requestParams: req.params,
-        requestQuery: req.query,
+        requestParams: recordedRouteParams(req.params),
+        requestQueryParameterCount: Object.keys(req.query || {}).length,
 
         // Additional context for debugging
         timestamp: new Date().toISOString(),

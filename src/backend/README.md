@@ -4,7 +4,7 @@ This is the backend for the Node.js tutorial application, designed as an educati
 
 ## Overview
 
-The backend server is built with Node.js v22.16.0 LTS and Express.js 5.1.0, leveraging the latest stable technologies with long-term support. It implements a single-threaded event-driven architecture optimized for educational clarity while maintaining production-ready patterns.
+The backend server is built on Node.js 22.x LTS and Express 5.x - validated on Node v22.23.2 with Express 5.2.1, the version the committed lockfile resolves for the declared `^5.1.0` range. It implements a single-threaded event-driven architecture optimized for educational clarity while maintaining production-ready patterns.
 
 ### Educational Objectives
 
@@ -18,7 +18,7 @@ The backend server is built with Node.js v22.16.0 LTS and Express.js 5.1.0, leve
 
 - **Single `/hello` Endpoint**: Returns a simple "Hello world" message
 - **Event-Driven Architecture**: Leverages Node.js single-threaded event loop design
-- **Promise-Based Error Handling**: Modern error management using Express 5.1.0 features
+- **Promise-Based Error Handling**: Modern error management using Express 5.x features
 - **Educational Structure**: Clear, maintainable code with extensive documentation
 - **Production Patterns**: Demonstrates scalable architecture principles
 
@@ -28,12 +28,15 @@ Before you begin, ensure you have the following installed:
 
 ### Required Software
 
-- **[Node.js](https://nodejs.org/)**: v22.16.0 LTS or higher (**v22.16.0 LTS recommended**)
-  - Node.js v22 officially transitioned into Long Term Support (LTS) with codename 'Jod'
-  - Production applications should only use Active LTS or Maintenance LTS releases
-  - Includes critical updates and security support for years to come
-- **[npm](https://www.npmjs.com/)**: v11.4.1 or higher (comes bundled with Node.js)
-  - Latest npm version provides enhanced security and performance features
+- **[Node.js](https://nodejs.org/)**: `package.json` requires v18.0.0 or higher; **22.x LTS is
+  recommended**, and this tutorial is validated on v22.23.2
+  - Node.js v22 transitioned into Long Term Support (LTS) with codename 'Jod'
+  - Production applications should only use Active LTS or Maintenance LTS releases; check
+    <https://nodejs.org/en/about/previous-releases> for the phase the 22.x line is in now
+  - The development tools narrow this further than `package.json` does - see the version
+    verification note below
+- **[npm](https://www.npmjs.com/)**: `package.json` requires v8.0.0 or higher (comes bundled with
+  Node.js); validated on 11.18.0
 
 ### System Requirements
 
@@ -138,12 +141,13 @@ lockfile resolves for the declared `^5.1.0` range, and `npm ls express` prints t
   `[INFO]:` and `[ERROR]:`, and `config/index.js` prints the configuration summary above. The
   log content itself is identical in every environment
 - **Error Reporting**: an error forwarded to the error handler is logged server-side with its
-  message and name, the request URL, method, params and query, an ISO timestamp, the client
-  address and the request's `host`, `content-type` and `accept` headers — plus, in development
-  only, the error's stack. Other request headers are not recorded, so an `Authorization` header
-  or a `Cookie` cannot reach the log; the query string still can, because it is part of the
-  target. The client receives the same generic four-field 500 envelope in every environment,
-  whose `path` field echoes the request target it sent
+  message and name, the request pathname, method, route params, the number of query parameters
+  the target carried, an ISO timestamp, the client address and the request's `host`,
+  `content-type` and `accept` headers — plus, in development only, the error's stack. Other
+  request headers are not recorded, so an `Authorization` header or a `Cookie` cannot reach the
+  log, and neither can a query value: the query string is cut off the target and only its
+  parameter count is kept. The client receives the same generic four-field 500 envelope in every
+  environment, whose `path` field echoes the request target it sent
 
 ### Production Mode
 
@@ -284,8 +288,8 @@ src/backend/
 - **`routes/hello.js`**: Implementation of the `/hello` endpoint with proper error handling
 
 **Middleware Components:**
-- **`errorHandler.js`**: Centralized error handling using Express 5's enhanced promise support. Writes one diagnostic entry per forwarded error — the error's message and name together with the request URL, method, params and query, an ISO timestamp, the client address and the request's `host`, `content-type` and `accept` headers, plus the error's stack in development only — and answers the client with a generic 500 envelope of four fields (`error`, `status`, `timestamp`, `path`) — where `path` is `req.originalUrl || req.url`, so it echoes the caller's own target including any query string. Because of that echo the response is marked `X-Content-Type-Options: nosniff`, so a target carrying raw markup cannot be sniffed out of the JSON body and rendered as HTML; that header is set on this 500 response only. It never calls `next()`: it is the terminal middleware, so the detail stays in the server log and only the generic envelope reaches the client
-- **`requestLogger.js`**: Logs each request once on arrival, before routing: the method (`req.method`), the path (`req.originalUrl`) and the body. Object bodies are serialized with `JSON.stringify`, primitive bodies are converted with `String`, and a request with no body — the normal `GET /hello` case — is logged as `{}`. It never reads or writes the response, so there is no response, status-code or timing log
+- **`errorHandler.js`**: Centralized error handling using Express 5's enhanced promise support. Writes one diagnostic entry per forwarded error — the error's message and name together with the request pathname, method, route params, the number of query parameters the target carried, an ISO timestamp, the client address and the request's `host`, `content-type` and `accept` headers, plus the error's stack in development only; every recorded value is escaped to printable ASCII and bounded to 256 characters — and answers the client with a generic 500 envelope of four fields (`error`, `status`, `timestamp`, `path`) — where `path` is `req.originalUrl || req.url`, so it echoes the caller's own target including any query string. Because of that echo the response is marked `X-Content-Type-Options: nosniff`, so a target carrying raw markup cannot be sniffed out of the JSON body and rendered as HTML; that header is set on this 500 response only. It never calls `next()`: it is the terminal middleware, so the detail stays in the server log and only the generic envelope reaches the client
+- **`requestLogger.js`**: Logs each request once on arrival, before routing: the method (`req.method`), the pathname of the target (`req.originalUrl` up to the first `?` or `#`) and the body. Object bodies are serialized with `JSON.stringify`, primitive bodies are converted with `String`, and a request with no body — the normal `GET /hello` case — is logged as `{}`. Every logged value is escaped to printable ASCII and bounded to 256 characters. It never reads or writes the response, so there is no response, status-code or timing log
 
 **Support Modules:**
 - **`config/index.js`**: Environment-based configuration management
@@ -300,7 +304,7 @@ src/backend/
 | [express](https://www.npmjs.com/package/express) | ^5.1.0 | Fast, unopinionated, minimalist web framework for Node.js | MIT |
 | [dotenv](https://www.npmjs.com/package/dotenv) | ^16.3.1 | Loads the package-local `.env` file so `config/index.js` can read `PORT`, `NODE_ENV` and `HOST` | BSD-2-Clause |
 
-**Express.js 5.1.0 Key Features:**
+**Express 5.x Key Features** (the declared `^5.1.0` resolves to 5.2.1 in the committed lockfile)**:**
 - **Promise Support**: Middleware can now return rejected promises, caught by the router as errors
 - **Enhanced Security**: Updated to path-to-regexp@8.x, removing sub-expression regex patterns for security reasons
 - **Node.js Compatibility**: Requires Node.js 18 or higher, optimized for v22 LTS
@@ -422,21 +426,22 @@ export PORT=8080
 
 - **One log line per request**, written on arrival by `requestLogger` before routing:
   `[INFO]: HTTP Request - Method: GET Path: /hello Body: {}`. It carries three values and no
-  more — the method, the path as `req.originalUrl` received it, and the body. A request that
-  matches no route is logged in exactly the same way, because the logger runs before routing
-  and has no idea yet whether a route will match
+  more — the method, the pathname of the target, and the body. A request that matches no route is
+  logged in exactly the same way, because the logger runs before routing and has no idea yet
+  whether a route will match
 - **One diagnostic entry per forwarded error**, written by `errorHandler`: the error's message
-  and name, the request URL, method, params and query, an ISO timestamp, the client address
-  (`req.ip`, or the connection's remote address when Express resolved none), and the request's
-  `host`, `content-type` and `accept` headers — those three by name, from a fixed allow-list, so
-  no other header is recorded. In development the entry also carries the error's stack; outside
-  development it does not, because every frame in a stack names an absolute filesystem path. The
-  client gets a separate four-field 500 envelope, and the split between the two is field-by-field
-  rather than wholesale. Omitted from the envelope: the message, stack and name, the method, the
-  headers, the params, the query and the client address — and `error` is always the fixed string
-  `Internal Server Error`. Present in it: `status`, a `timestamp`, and `path`, which repeats
-  `req.originalUrl || req.url` with the query string included, so the caller is handed back the
-  target it sent. `path` is the only request data the response echoes
+  and name, the request pathname, method, route params, the number of query parameters the target
+  carried, an ISO timestamp, the client address (`req.ip`, or the connection's remote address when
+  Express resolved none), and the request's `host`, `content-type` and `accept` headers — those
+  three by name, from a fixed allow-list, so no other header is recorded. In development the entry
+  also carries the error's stack; outside development it does not, because every frame in a stack
+  names an absolute filesystem path. The client gets a separate four-field 500 envelope, and the
+  split between the two is field-by-field rather than wholesale. Omitted from the envelope: the
+  message, stack and name, the method, the headers, the params, the query count and the client
+  address — and `error` is always the fixed string `Internal Server Error`. Present in it:
+  `status`, a `timestamp`, and `path`, which repeats `req.originalUrl || req.url` with the query
+  string included, so the caller is handed back the target it sent. `path` is the only request
+  data the response echoes, and the response is marked `nosniff` because of it
 - **Five startup lines** and, in development only, a six-line configuration summary
 
 ### What Is Not Implemented
@@ -502,7 +507,10 @@ curl -i http://localhost:3000/nonexistent
 
 - **Input Validation**: None at the application level. Nothing here parses or validates a body,
   query string or parameter, and no body parser is mounted, so `req.body` is always `undefined`.
-  What rejects a malformed request is Node's own HTTP parser, before any middleware runs
+  What rejects a malformed request is Node's own HTTP parser, before any middleware runs. Request
+  data is neutralized on one path only — on the way into a log line, described under
+  [Known Limitations of the Tutorial Middleware](#known-limitations-of-the-tutorial-middleware) —
+  because that is the only place the application does anything with it
 - **Error Handling**: An error forwarded to `errorHandler` produces a four-field 500 envelope.
   Field by field: `error` is always the fixed string `Internal Server Error`, so the failure's own
   message, stack and name never reach the client, and neither do the method, headers, params,
@@ -528,26 +536,37 @@ curl -i http://localhost:3000/nonexistent
 `requestLogger` and `errorHandler` are deliberately minimal teaching code. Read this before
 copying either of them anywhere real.
 
-- **The request log records the target verbatim.** `requestLogger` logs `req.originalUrl`, so a
-  credential a client puts in a query string — `/hello?access_token=…` — reaches the console even
-  though the route ignores it. Log `req.path` or a fixed route label instead
-- **Neither module encodes what it logs.** Values go to `console` as-is, with no escaping of ANSI,
-  C0/C1, `U+2028`/`U+2029` or bidirectional controls, so a value carrying them can distort how a
-  log line is displayed. Reachability differs between the two modules, so treat them separately.
-  The request log is safe as things stand: it records `req.originalUrl`, which keeps percent-encoding
-  intact — `%1B` stays those three characters and never becomes `ESC` — a raw CR/LF in a request
-  target is rejected `400` by Node's HTTP parser before any middleware runs, and no body parser
-  exists to populate `req.body`. The error diagnostic is not safe: it logs `req.query`, and Express's
-  query parser percent-*decodes*, so `?x=%E2%80%AE` arrives as a genuine `U+202E` and reaches the
-  console verbatim — and the same applies to the values of the three headers it is allowed to
-  record, since the allow-list bounds *which* headers reach the log, not how their values are
-  written. That path needs an
-  application error to be forwarded, and nothing in this tutorial raises one, so it is latent rather
-  than open. Add the encoding before you add either a body parser or a route that can fail
-- **The error diagnostic still records the request's own data, though no longer its credentials.**
-  `errorHandler` logs the error's message and name with the request URL, method, params, query,
-  an ISO timestamp and the client address. Two fields are deliberately bounded, and both bounds
-  are worth understanding rather than copying blindly:
+Three rules are implemented in both modules, and they are worth reading as patterns rather than
+as limitations — each one closes a way a caller could reach the log:
+
+- **Neither module logs a query string.** `requestLogger` cuts `req.originalUrl` at the first `?`
+  or `#` and logs the pathname; `errorHandler` does the same for `requestPath` and replaces the
+  decoded `req.query` with `requestQueryParameterCount`, a number. A credential a caller puts in a
+  target — `/hello?access_token=…` — therefore reaches neither console line, which matters because
+  a log file is copied, shipped and kept far longer than the request that produced it (CWE-532).
+  The values are dropped rather than filtered parameter by parameter: an allow-list of "safe"
+  parameter names would be a guess about callers this tutorial has not met
+- **Neither module writes anything outside printable ASCII literally.** Every recorded value has
+  its non-printable characters replaced by inert `\uXXXX` text, so ANSI escapes, C0/C1 controls,
+  `U+2028`/`U+2029` and the bidirectional overrides cannot forge a second log entry, drive the
+  terminal reading the log, or reverse how a line is displayed. This matters most in
+  `errorHandler`: Express's query parser percent-*decodes*, so `?x=%E2%80%AE` used to arrive as a
+  genuine `U+202E`, and the values of the three allow-listed headers are as free-form as any other
+  client input — the allow-list bounds *which* headers reach the log, not what they may contain
+- **Every recorded value is bounded to 256 characters**, with the number of dropped characters
+  stated so a shortened value cannot be mistaken for a whole one. That covers the pathname, the
+  body, the header values, the route params and the error message, and it is what keeps one cheap
+  request from costing an unbounded amount of log. `requestLogger` still serializes an object body
+  with `JSON.stringify` and converts a primitive one with `String`, so the bound is what makes a
+  body parser safe to add later
+
+Two properties remain deliberately as they are, and both are teaching decisions rather than
+oversights:
+
+- **The error diagnostic still records request data**, because that is what a diagnostic is for:
+  the pathname, the method, the route params, the query parameter count, an ISO timestamp and the
+  client address. Two fields are bounded further, and both bounds are worth understanding rather
+  than copying blindly:
   - **Headers come from an allow-list**, `host`, `content-type` and `accept`, rather than from
     `req.headers` wholesale. Logging the whole header set is how a credential ends up in a log
     file — the weakness CWE-532 describes — because `Authorization`, `Cookie` and any API-key
@@ -556,22 +575,17 @@ copying either of them anywhere real.
     and the one it has not heard of is the one that reaches the log
   - **The stack is recorded in development only**, because every frame in it names an absolute
     filesystem path. `errorName` and `errorMessage` identify the failure in every environment
-  What is still recorded is request data: `requestUrl` and `requestQuery` carry the query string
-  as sent, so a credential a caller puts in the target — `/hello?access_token=…` — reaches the
-  console exactly as it does through the request log above, and `clientIP` is personal data.
-  Before this middleware goes anywhere real, decide deliberately about those two: log `req.path`
-  or a route label instead of the target, and mask or omit the address
-- **A body would be serialized whole.** `requestLogger` calls `JSON.stringify` on an object body
-  and `String` on a primitive one, with no size limit. That is latent rather than active here
-  because no parser populates `req.body`, but it becomes both an exposure and an unbounded cost
-  the moment one is added
+  `clientIP` is personal data, and it is the one field to decide about deliberately before this
+  middleware goes anywhere real: mask it, or omit it
 - **The client-address fallback is not null-safe.** `req.ip || req.connection.remoteAddress` throws
   a `TypeError` when Express resolved no `ip` *and* `req.connection` is absent, ending the request
   with no response at all instead of the generic 500. Real Express requests always supply one of
   the two, and `tests/unit/errorHandler.test.js` pins the behaviour so it is visible rather than
   latent. `req.connection` is also deprecated in favour of `req.socket`
 
-These are properties of this tutorial's middleware, not patterns to imitate.
+What the two modules do NOT attempt is a logging system: there is no level filter, no structured
+output, no redaction of values the application itself chooses to log, and no rotation or size
+management of the stream they write to. Those belong to whatever aggregates the output.
 
 ### Security Best Practices
 
@@ -722,4 +736,4 @@ For questions, issues, or contributions:
 
 **License**: This tutorial project is provided for educational purposes. Please refer to the project license file for usage terms.
 
-**Last Updated**: December 2024 | **Node.js Version**: v22.16.0 LTS | **Express Version**: 5.1.0
+**Validated on**: Node v22.23.2, npm 11.18.0, Express 5.2.1 | **Declared support**: Node >=18.0.0, npm >=8.0.0, Express ^5.1.0

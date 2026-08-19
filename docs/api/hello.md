@@ -11,7 +11,7 @@ This document provides comprehensive details for the `/hello` API endpoint. This
 - **Path:** `/hello`
 - **Method:** `GET`
 - **Description:** Responds with a static "Hello world" message to demonstrate basic HTTP server functionality and RESTful endpoint implementation.
-- **Framework:** Express.js v5.1.0 with Node.js v22.16.0 LTS
+- **Framework:** Express 5.x with Node.js 22.x LTS (validated on Express 5.2.1 and Node v22.23.2)
 - **Purpose:** Educational demonstration of HTTP request-response patterns and Express routing fundamentals
 
 ---
@@ -141,8 +141,8 @@ The browser will display the plain text response "Hello world" directly on the p
 ## Technical Implementation
 
 ### Framework Details
-- **Express Version:** 5.1.0 (latest stable with enhanced promise support)
-- **Node.js Version:** v22.16.0 LTS (Active LTS until October 2025)
+- **Express Version:** declared `^5.1.0`, resolved to 5.2.1 by the committed lockfile (enhanced promise support)
+- **Node.js Version:** 22.x LTS, validated on v22.23.2 (`package.json` requires >= 18.0.0)
 - **Routing Pattern:** Express Router with modular organization
 - **Response Method:** `res.send()` with automatic Content-Type detection
 
@@ -206,8 +206,10 @@ This endpoint demonstrates:
 
 - **Input Validation:** Not applicable to the response — the handler reads nothing from the request
   and returns the same 11 bytes regardless of what is sent. It is not true that the request is
-  ignored entirely, though: `requestLogger` runs first and writes the target verbatim, so a query
-  string appended to `/hello` is recorded even though the endpoint disregards it
+  ignored entirely, though: `requestLogger` runs first and records the method, the pathname and the
+  body. A query string appended to `/hello` is cut off before the log line is written, so it is
+  recorded nowhere, and the pathname that is recorded is escaped to printable ASCII and bounded to
+  256 characters
 - **Authentication:** None required (tutorial endpoint)
 - **Authorization:** No access restrictions
 - **Data Exposure:** The response body is a static string and exposes nothing about the server. What
