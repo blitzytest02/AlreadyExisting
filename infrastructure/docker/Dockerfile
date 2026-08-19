@@ -12,16 +12,14 @@ ARG PORT=3000
 
 WORKDIR /usr/src/app
 
-# Manifests first, source second: this layer is what Docker caches, so a source-only change
-# re-runs the copy below without re-running the install.
+# Manifests first, source second, and deliberately no install in this stage. Nothing here builds,
+# lints, bundles or tests, so a node_modules tree installed at this point would be work that every
+# build pays for and then discards: the runtime stage below installs its own tree from these same
+# two manifests, and that tree - not one from here - is what the final image ships. That install is
+# also where `npm ci` compares package.json against package-lock.json and fails the build if the
+# two disagree, so reproducibility does not depend on installing twice. This stage exists to gather
+# the manifests and the application source into one flat layout the runtime stage can copy from.
 COPY src/backend/package.json src/backend/package-lock.json ./
-
-# npm ci installs exactly what package-lock.json pins and fails if the two files disagree, which
-# is what makes the build reproducible. This stage runs no build or test step, so nothing in it
-# consumes the devDependencies it installs; the runtime stage below installs its own tree from the
-# same two manifests, and that tree - not this one - is what the final image ships.
-RUN npm ci --include=dev \
-    && npm cache clean --force
 
 # Copy the application source the runtime stage will need, and nothing else
 # The build context is the repository root, and no .dockerignore is effective for it, so an
@@ -72,8 +70,10 @@ COPY --from=builder /usr/src/app/package.json /usr/src/app/package-lock.json ./
 RUN npm ci --omit=dev \
     && npm cache clean --force
 
-# Application source only, named path by named path. Copying the builder's workdir wholesale would
-# bring its devDependency node_modules with it and undo the install above.
+# Application source only, named path by named path. This copy lands on top of the production
+# node_modules installed above, so it must bring nothing but the files the application needs:
+# copying the builder's workdir wholesale would put whatever that stage happens to hold into the
+# image that runs the application, which is how a dev dependency or a stray file gets shipped.
 COPY --from=builder /usr/src/app/server.js /usr/src/app/app.js ./
 COPY --from=builder /usr/src/app/config/ ./config/
 COPY --from=builder /usr/src/app/routes/ ./routes/

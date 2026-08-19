@@ -485,7 +485,8 @@ describe('errorHandler middleware', () => {
         it('reflects a decoded control in the client response path when the target carries one', () => {
             // originalUrl is normally still encoded, so this is the narrower case of a caller or
             // upstream proxy supplying an already-decoded target: the envelope hands it straight
-            // back, which is the F-7 reflection and this gap meeting in one response.
+            // back. That is the envelope reflecting the caller's own target in `path` and the
+            // control-character gap described above meeting in a single response.
             const req = createRequest({ originalUrl: '/hello?x=\u202Ereversed' });
 
             errorHandler(err, req, res, next);

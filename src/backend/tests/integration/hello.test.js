@@ -5,12 +5,15 @@
  * in isolation, so what is under test is the whole path a client takes: the listener, the
  * middleware stack, the two-hop route mount and the response framing.
  *
- * Three suites, each asserting something the others cannot:
+ * Five suites, in the order they appear below, each asserting something the others cannot:
  * - the endpoint contract over the wire (status, content type, framed length, body)
  * - the ORDER of the three registrations in app.js, which no endpoint assertion can observe
  * - that importing server.js binds no port and registers no process-level handler, which is what
  *   makes the hooks below safe to write at all. The import is not free of side effects; those two
  *   specific guarantees are what the hooks depend on
+ * - which request targets Express resolves to the one registered route, and which it does not
+ * - what each HTTP method receives on that route: the two the framework answers for the single GET
+ *   registration, and the ones that match nothing
  */
 
 const request = require('supertest');
@@ -93,9 +96,11 @@ describe('Hello API Endpoint', () => {
         expect(response.headers['content-length']).toBe('11');
         expect(Buffer.byteLength(response.text, 'utf8')).toBe(11);
 
-        // Supertest only reports a duration for some transports, so this is guarded rather than
-        // asserted unconditionally. It is a smoke check against a pathological regression, not a
-        // performance requirement of the endpoint.
+        // The installed Supertest never sets response.duration - neither supertest 7.1.1 nor the
+        // superagent it bundles defines that property anywhere - so the guard below never opens and
+        // the comparison inside it never runs. No timing requirement is in force here. The block is
+        // retained from the original suite rather than deleted, and the guard is what makes the
+        // absent property harmless.
         if (response.duration !== undefined) {
             expect(response.duration).toBeLessThan(100);
         }
@@ -117,7 +122,8 @@ describe('Hello API Endpoint', () => {
 
         expect(response.status).toBe(404);
 
-        // Guarded for the same reason as in the success case above.
+        // Inert for the same reason as in the success case above: response.duration is never set,
+        // so this guard never opens and no timing requirement is asserted here either.
         if (response.duration !== undefined) {
             expect(response.duration).toBeLessThan(50);
         }
@@ -492,3 +498,102 @@ describe('Route Equivalence Contract', () => {
         expect(spellings.filter((spelling) => spelling === '/hello')).toHaveLength(1);
     });
 });
+
+/**
+ * Method Semantics Contract
+ *
+ * One handler is registered - GET on the mounted /hello route - and everything else a client can
+ * send to that path is answered by Express itself. Four documents state what those answers are
+ * (README.md, docs/api/hello.md, docs/architecture/overview.md and routes/hello.js's own header),
+ * and until these cases existed nothing executable owned any of it: the framework's behaviour
+ * could have changed under the documentation without a single test failing.
+ *
+ * The container health check is a consumer of this path but not of the HEAD case specifically. Its
+ * `wget --no-verbose --tries=1 --spider` was run against the image's own BusyBox 1.37.0 and issues
+ * a GET, not a HEAD - so the probe rides on the same response the first suite asserts, and the
+ * HEAD case below is owned by the documentation alone.
+ *
+ * What the framework does, and why:
+ *
+ *   HEAD /hello    - 200 with the headers the GET would carry, including Content-Length: 11, and
+ *                    no body. Express registers HEAD alongside every GET route, so this needs no
+ *                    handler of its own.
+ *   OPTIONS /hello - 200 with `Allow: GET, HEAD`, built by the router from the methods the route
+ *                    registers. There is no CORS middleware here; the header is the router
+ *                    describing itself.
+ *   POST, PUT, PATCH, DELETE, TRACE /hello - 404, because no route/method pair matches, exactly as
+ *                    for a path that does not exist. This application contains no method gate and
+ *                    answers 405 nowhere; asserting the 404 is what keeps that true.
+ *
+ * No handler is added for any method here: every response below is Express's own, and these cases
+ * record it rather than requesting it.
+ */
+describe('Method Semantics Contract', () => {
+    beforeAll((done) => {
+        server.listen(0, () => done());
+    });
+
+    afterAll((done) => {
+        server.close(() => done());
+    });
+
+    it('answers HEAD /hello with the GET headers and an empty body', async () => {
+        const response = await request(server)
+            .head('/hello')
+            .expect(200)
+            .expect('Content-Type', 'text/html; charset=utf-8')
+            .expect('Content-Length', '11');
+
+        expect(response.status).toBe(200);
+
+        // Content-Length still frames the 11 bytes a GET would return while no bytes arrive: that
+        // combination is what makes this a HEAD response rather than a truncated GET, and it is
+        // what the container health check relies on.
+        expect(response.headers['content-length']).toBe('11');
+        expect(response.text || '').toBe('');
+    });
+
+    it('answers OPTIONS /hello with 200 and Allow: GET, HEAD', async () => {
+        const response = await request(server)
+            .options('/hello')
+            .expect(200)
+            .expect('Allow', 'GET, HEAD');
+
+        expect(response.status).toBe(200);
+
+        // Asserted with its exact separator, because a consumer reading this header splits on the
+        // comma-space the router emits, and because the two method names are the whole point: a
+        // third name appearing here would mean a second method had been registered on the route.
+        expect(response.headers['allow']).toBe('GET, HEAD');
+    });
+
+    // Every explicit method the documentation describes as unmatched. TRACE is included because
+    // the documentation names it and because it is the method a reader is most likely to assume
+    // the framework treats specially.
+    const unmatchedMethods = ['post', 'put', 'patch', 'delete', 'trace'];
+
+    test.each(unmatchedMethods)(
+        'answers %s /hello with a plain 404, since no route/method pair matches',
+        async (method) => {
+            const response = await request(server)[method]('/hello');
+
+            expect(response.status).toBe(404);
+
+            // The body is asserted too, so a response that somehow reached the handler while
+            // reporting 404 could not pass as a rejection.
+            expect(response.text).not.toBe('Hello world');
+        }
+    );
+
+    // The registered method, re-asserted inside this suite as the control for the five cases
+    // above: the 404s only mean "this method is not registered" if the same path with GET still
+    // succeeds. Without it, an application that had lost the route entirely would satisfy every
+    // expectation above.
+    it('still answers GET /hello with 200, which is what makes those 404s method-specific', async () => {
+        const response = await request(server).get('/hello');
+
+        expect(response.status).toBe(200);
+        expect(response.text).toBe('Hello world');
+    });
+});
+

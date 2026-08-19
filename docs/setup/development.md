@@ -406,8 +406,8 @@ npm run dev
 
 `.env` is **not** watched, so a change to it takes effect only after you restart the process
 yourself — type `rs` at the nodemon prompt or stop and start it again. `nodemon.json` ignores
-`tests/`, `node_modules/` and `package-lock.json`, and nodemon ignores `coverage/` by default, so
-running the test suite does not trigger a restart.
+`tests/`, `node_modules/`, `coverage/` and `package-lock.json` — and nodemon ignores `coverage/`
+by default as well — so running the test suite does not trigger a restart.
 
 ### 4.3 Direct Node.js Execution
 
@@ -730,9 +730,9 @@ npm run dev
 #### Development Server Features
 
 **Auto-Reload Capability:**
-- Watches `.js` and `.json` files under `src/backend`, ignoring `tests/`, `node_modules/` and
-  `package-lock.json` (`coverage/` is ignored by nodemon's own defaults, and `.env` is not
-  watched — restart the process to pick it up)
+- Watches `.js` and `.json` files under `src/backend`, ignoring `tests/`, `node_modules/`,
+  `coverage/` and `package-lock.json` (`coverage/` is named in `nodemon.json` and is ignored by
+  nodemon's own defaults as well, and `.env` is not watched — restart the process to pick it up)
 - Automatically restarts the server on changes
 - Maintains console history and logs
 - Preserves environment variables across restarts
@@ -1193,7 +1193,8 @@ environments.
 > repository's dependencies are `express` and `dotenv` at runtime plus `jest`, `nodemon` and
 > `supertest` for development, and nothing here — structured logging, security middleware,
 > performance monitoring, database access — is installed or wired up. §9.1 is the exception: it
-> uses only `NODE_ENV`, `PORT` and `HOST`, which the application does read.
+> uses only `NODE_ENV`, `PORT` and `HOST`, which `config/index.js` does read — `NODE_ENV` and
+> `PORT` change what the application does, while `HOST` only appears in the startup summary.
 
 ### 9.1 Environment-Specific Configuration
 
@@ -1223,13 +1224,16 @@ PORT=80
 HOST=0.0.0.0
 ```
 
-`NODE_ENV`, `PORT`, `HOST`, `APP_NAME` and `ENABLE_LOGGING` are the settings this application
-reads and acts on; `config/index.js` also reads `AUTO_RESTART`, `TRUST_PROXY`, `JSON_LIMIT` and
-`URLENCODED_LIMIT` into its configuration object, but no code consumes those four values yet.
-Every other variable in `.env` is inert. Per-environment log levels are deliberately absent from
-these examples: the tutorial's logger has two fixed levels and no filter, so a `LOG_LEVEL` line
-here would look like configuration while doing nothing. It becomes meaningful only alongside the
-optional Winston enhancement in section 9.3 below.
+`NODE_ENV`, `PORT` and `ENABLE_LOGGING` are the settings this application acts on. `HOST` and
+`APP_NAME` are read as well, but they only appear in the startup summary: `server.js` calls
+`server.listen(config.port)` with no host argument, so the `HOST=0.0.0.0` line above records an
+intention rather than changing anything — the server already accepts connections on every
+interface, whatever `HOST` says. `config/index.js` also reads `AUTO_RESTART`, `TRUST_PROXY`,
+`JSON_LIMIT` and `URLENCODED_LIMIT` into its configuration object, but no code consumes those four
+values yet. Every other variable in `.env` is inert. Per-environment log levels are deliberately
+absent from these examples: the tutorial's logger has two fixed levels and no filter, so a
+`LOG_LEVEL` line here would look like configuration while doing nothing. It becomes meaningful only
+alongside the optional Winston enhancement in section 9.3 below.
 
 #### Dynamic Environment Loading
 
@@ -1518,10 +1522,11 @@ npm run test:coverage
 
 #### Environment Configuration
 
-Create production environment files. As it stands the tutorial reads and acts on `NODE_ENV`,
-`PORT`, `HOST`, `APP_NAME` and `ENABLE_LOGGING`, and reads `AUTO_RESTART`, `TRUST_PROXY`,
-`JSON_LIMIT` and `URLENCODED_LIMIT` without yet consuming them; the remaining entries below belong
-to the features this section proposes adding (session handling, JWT authentication, CORS, a
+Create production environment files. As it stands the tutorial acts on `NODE_ENV`, `PORT` and
+`ENABLE_LOGGING`; it also reads `HOST` and `APP_NAME`, which only reach the startup summary, and
+`AUTO_RESTART`, `TRUST_PROXY`, `JSON_LIMIT` and `URLENCODED_LIMIT`, which nothing consumes yet —
+setting `HOST` does not change the interface the server listens on. The remaining entries below
+belong to the features this section proposes adding (session handling, JWT authentication, CORS, a
 level-aware logger) and have no effect until that code exists:
 
 ```env

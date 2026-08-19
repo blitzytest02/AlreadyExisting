@@ -49,7 +49,11 @@ node --version
 
 npm --version
 # This tutorial is validated on Node v22.23.2 with npm 11.18.0. package.json accepts any
-# Node >= 18.0.0 and npm >= 8.0.0, so an older 22.x or an 18/20 LTS also runs it.
+# Node >= 18.0.0 and npm >= 8.0.0, and the application's own dependencies - express and dotenv -
+# do run on any Node >= 18. The development tools are narrower: jest 30 declares
+# "^18.14.0 || ^20.0.0 || ^22.0.0 || >=24.0.0" and nodemon's dependency tree declares "20 || >=22",
+# so use Node 20 or 22 for npm ci, npm test and npm run dev - on 18.x npm reports those packages
+# as unsupported engines.
 ```
 
 ## Installation
@@ -335,7 +339,7 @@ HTTP Client → HTTP Server → Express Application → Route Handler → Respon
 |----------|---------|-------------|---------|
 | `NODE_ENV` | `development` | Application environment. Selects the `[INFO]:`/`[ERROR]:` log prefixes and whether the configuration summary is printed | `production` |
 | `PORT` | `3000` | HTTP server port | `8080` |
-| `APP_NAME` | `node-tutorial-app` | Name shown in the configuration summary; startup fails if it is empty | `my-tutorial` |
+| `APP_NAME` | `node-tutorial-app` | Name shown in the configuration summary; an empty or absent value falls back to `node-tutorial-app` | `my-tutorial` |
 | `HOST` | `localhost` | Host shown in the configuration summary | `0.0.0.0` |
 | `ENABLE_LOGGING` | `true` | Set to `false` to suppress the configuration summary | `false` |
 

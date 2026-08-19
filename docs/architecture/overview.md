@@ -95,7 +95,7 @@ The Hello Route Handler implements the core business logic for the `/hello` endp
 **Implementation Specifications:**
 - **Route Pattern**: One route is registered at `/hello`; Express's default case-insensitive and non-strict matching also accepts case variants and a trailing slash without registering additional routes
 - **HTTP Method Support**: `GET` is the only method registered for this route and returns 200; Express additionally generates the standard `HEAD /hello` (200, headers only) and `OPTIONS /hello` (200 with `Allow: GET, HEAD`) responses for that handler, while `POST`, `PUT`, `PATCH`, `DELETE`, and `TRACE` match no route/method pair and fall through to Express's default 404 handling
-- **Response Format**: Plain text content with "Hello world" static response
+- **Response Body**: The static string `Hello world` — 11 bytes, no punctuation, no envelope and no trailing newline
 - **Content-Type Header**: `text/html; charset=utf-8`, which Express sets automatically because `res.send()` is called with a string; the handler sets no content type header itself
 
 **Business Logic Pattern:**
