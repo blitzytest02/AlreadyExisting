@@ -26,7 +26,7 @@ This application is built to provide a hands-on, practical example for understan
 - **Node.js Version**: v22.16.0 LTS (codename 'Jod') with V8 12.4 JavaScript engine
 - **Express Version**: 5.1.0 with automatic promise rejection handling
 - **Platform Support**: Cross-platform compatibility (Windows, macOS, Linux)
-- **Performance Target**: Response time < 100ms, Memory usage < 50MB
+- **Performance**: Response time < 100ms; measured resident memory ≈ 65MB, of which a bare Node.js process already accounts for ~44MB
 - **Security**: `x-powered-by` disabled — the only security control the application configures. No security headers, CORS, rate limiting, authentication, input validation or ReDoS mitigation is implemented; hardening is out of scope for this tutorial
 
 ## 🚀 Getting Started
@@ -52,7 +52,8 @@ For detailed prerequisite information and system-specific installation guides, s
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/your_username/nodejs-tutorial-application.git
+   # <your-account> is a placeholder - substitute the account hosting your copy
+   git clone https://github.com/<your-account>/nodejs-tutorial-application.git
    ```
 
 2. **Navigate to the backend directory**
@@ -140,15 +141,21 @@ carry the `[INFO]:` prefix that the logger adds in development only:
 [INFO]: 🚀 HTTP Server successfully started and listening on port 3000
 [INFO]: 🌐 Server is ready to accept HTTP requests
 [INFO]: 📍 Local development URL: http://localhost:3000
-[INFO]: ⚡ Node.js v22.16.0 | Express 5.1.0 | Environment: development
+[INFO]: ⚡ Node.js v22.23.2 | Express 5.2.1 | Environment: development
 [INFO]: 🎯 Tutorial application initialized successfully
 ```
 
+Both version tokens are read at run time rather than written into the code, so the banner
+always names what is actually running: Node.js comes from `process.version` and Express from
+the installed package's own manifest. `Express 5.2.1` is what the committed lockfile resolves
+for the declared `^5.1.0` range; confirm your own with `node --version` and `npm ls express`.
+
 Run in any other environment (`NODE_ENV=production npm start`, for example) the six
 configuration lines are not printed at all and the five server lines appear without the
-`[INFO]:` prefix. The Node.js version shown is whatever `process.version` reports; the
-`Express 5.1.0` token is a fixed string in `server.js`, so check the version actually
-installed with `npm ls express` rather than reading it from this banner.
+`[INFO]:` prefix. One line also changes wording: the third reads
+`📍 Listening on all network interfaces at port 3000`, because no host is ever passed to
+`server.listen()` and outside development a `localhost` URL would describe the reader's
+machine rather than the address the process answers on.
 
 Each request then adds one line of its own:
 
@@ -205,7 +212,7 @@ src/backend/
 - **Routing**: Express Router with modular organization
 - **Middleware**: Request logging and error handling
 - **Configuration**: Environment-based configuration management
-- **Logging**: A thin wrapper over `console` with exactly two levels — `info` (stdout) and `error` (stderr). There is no log-level setting, no automatic timestamping, no response or timing log and no metrics: `NODE_ENV=development` adds the `[INFO]:` and `[ERROR]:` prefixes, and every other environment forwards the arguments to `console` unchanged. Request logging records three values — the method (`req.method`), the path (`req.originalUrl`) and the body — as one line per request written on arrival, before routing. The error handler writes one diagnostic entry per forwarded error, carrying the error's message, stack and name alongside the request URL, method, headers, params and query, an ISO timestamp, the User-Agent and the client address. The client's four-field envelope overlaps that only in part: the message, stack, name, method, headers, params, query, User-Agent and address are all omitted and `error` is always the fixed string `Internal Server Error`, while `status`, a `timestamp` and `path` — which echoes the request target the caller sent, query string included — are returned. See the [Architecture Overview](./docs/architecture/overview.md) for the exact contract
+- **Logging**: A thin wrapper over `console` with exactly two levels — `info` (stdout) and `error` (stderr). There is no log-level setting, no automatic timestamping, no response or timing log and no metrics: `NODE_ENV=development` adds the `[INFO]:` and `[ERROR]:` prefixes, and every other environment forwards the arguments to `console` unchanged. Request logging records three values — the method (`req.method`), the path (`req.originalUrl`) and the body — as one line per request written on arrival, before routing. The error handler writes one diagnostic entry per forwarded error, carrying the error's message and name alongside the request URL, method, params and query, an ISO timestamp, the client address and the request's `host`, `content-type` and `accept` headers — those three from a fixed allow-list, so an `Authorization` header or a `Cookie` is never copied into the log — plus the error's stack in development only, since every frame in a stack names an absolute filesystem path. The client's four-field envelope overlaps that only in part: the message, stack, name, method, headers, params, query and address are all omitted and `error` is always the fixed string `Internal Server Error`, while `status`, a `timestamp` and `path` — which echoes the request target the caller sent, query string included — are returned. See the [Architecture Overview](./docs/architecture/overview.md) for the exact contract
 
 For a detailed explanation of the system architecture, design patterns, and component interactions, please see the [Architecture Overview](./docs/architecture/overview.md).
 
@@ -226,6 +233,26 @@ docker build -t nodejs-tutorial-app -f infrastructure/docker/Dockerfile .
 
 docker run -p 3000:3000 nodejs-tutorial-app
 ```
+
+`curl http://localhost:3000/hello` then answers `Hello world` exactly as it does on the host, and
+`docker ps` shows the container as `healthy` once its own health check has probed `/hello`.
+
+**Two container behaviours worth knowing before you meet them:**
+
+- **Give `PORT` a usable number.** `docker run -e PORT=4300 -p 4300:4300 nodejs-tutorial-app`
+  works end to end: the application and its health check both follow the override. A value the
+  application cannot use does not fail loudly, though. `config/index.js` resolves the port with
+  `parseInt(process.env.PORT, 10) || 3000`: text such as `abc` parses to `NaN`, while `0` parses
+  successfully to the number `0` — both are falsy, so either one falls back to 3000. The
+  application therefore serves on 3000 while the health check, which uses the value you typed
+  rather than the resolved one, fails: `PORT=abc` gives `wget: bad port 'abc'` and `PORT=0` probes
+  literal port 0 and gets `Connection refused`. After three failed probes Docker labels a
+  perfectly working container `unhealthy`.
+- **`docker stop` reports exit code 1.** That is not a crash. The container's command is
+  `npm start`, so npm is process 1: it passes SIGTERM to `node server.js` and then reports the
+  signal-terminated child as a failed command, leaving `npm error signal SIGTERM` in the log and
+  a non-zero exit status. The stop is otherwise clean — the process is gone in under a second and
+  the port is free immediately.
 
 ### ☸️ Kubernetes Deployment
 
@@ -257,6 +284,10 @@ npm run test:coverage
 
 npm run test:watch
 ```
+
+Coverage collection is on for every Jest run, so `npm run test:watch` prints a coverage table as
+well. The watcher's table lists no files and reads `0%` in every column, even after you press `a`
+to run everything, so take coverage from `npm test` or `npm run test:coverage` instead.
 
 **Testing Stack:**
 - **Jest**: JavaScript testing framework
@@ -333,7 +364,7 @@ For comprehensive contribution guidelines, development setup, coding standards, 
 
 ## 📄 License
 
-This project is distributed under the MIT License. See the [LICENSE](LICENSE) file for complete details.
+This project is distributed under the MIT License. No `LICENSE` file is committed to this repository, so the full licence text is not included here.
 
 The MIT License allows for:
 - ✅ Commercial use
@@ -353,8 +384,8 @@ The MIT License allows for:
 
 ### 🆘 Getting Help
 
-- **Issues**: Report bugs and request features via [GitHub Issues](https://github.com/your_username/your_repository/issues)
-- **Discussions**: Ask questions and share ideas in [GitHub Discussions](https://github.com/your_username/your_repository/discussions)
+- **Issues**: Report bugs and request features through the GitHub Issues page of the repository you cloned this from — this tutorial ships no upstream repository URL
+- **Discussions**: Ask questions and share ideas in that same repository's GitHub Discussions
 - **Documentation**: Check this README and linked documentation for detailed information
 
 ### 🌟 Educational Value

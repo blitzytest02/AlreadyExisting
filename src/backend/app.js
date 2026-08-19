@@ -79,13 +79,17 @@ app.use('/', routes);
  * an error and never arrives here - Express answers it with its own 404.
  *
  * The two sides of this registration are deliberately asymmetric. The diagnostic it writes to
- * the server console is detailed - the error's message, stack and name alongside the request
- * URL, method, headers, params and query, an ISO timestamp, the User-Agent and the client
- * address - because that entry exists for whoever has to reproduce the failure. What the client
- * receives is the four-field envelope `{ error, status, timestamp, path }`, which says nothing
- * about how the server is built: `error` is the fixed string 'Internal Server Error'. Only
- * `path` carries request data - it is `req.originalUrl || req.url`, so the caller is handed back
- * the target it sent, query string included, which is what lets it correlate the failure.
+ * the server console is detailed enough to reproduce the failure - the error's message and name
+ * alongside the request URL, method, params, query, an ISO timestamp and the client address,
+ * plus the request's `host`, `content-type` and `accept` headers and, in development only, the
+ * error's stack. It is detailed rather than complete: the headers come from that fixed
+ * allow-list rather than from `req.headers`, so a credential the caller sent in an
+ * `Authorization` header or a `Cookie` is not copied into the log, and the stack - the one field
+ * naming absolute filesystem paths - is withheld where the log may outlive the machine. What the
+ * client receives is the four-field envelope `{ error, status, timestamp, path }`, which says
+ * nothing about how the server is built: `error` is the fixed string 'Internal Server Error'.
+ * Only `path` carries request data - it is `req.originalUrl || req.url`, so the caller is handed
+ * back the target it sent, query string included, which is what lets it correlate the failure.
  */
 app.use(errorHandler);
 

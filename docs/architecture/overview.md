@@ -68,7 +68,7 @@ The HTTP Server component serves as the foundational entry point of the applicat
 - **Runtime Environment**: Node.js v22.16.0 LTS with 'Jod' codename for critical updates and security support
 - **Port Configuration**: Default port 3000, configurable via environment variables for deployment flexibility
 - **Performance Characteristics**: Server startup time < 5 seconds, request processing latency < 50ms
-- **Memory Management**: Base allocation < 30MB, efficient garbage collection for request objects
+- **Memory Management**: ≈ 65MB resident once running (measured with `ps -o rss=`), nearly all of it the Node.js runtime itself; request objects are short-lived and garbage-collected
 
 ### 2.2. Express Application (`app.js`)
 
@@ -186,7 +186,7 @@ The logger passes its arguments straight to `console`, which joins them with spa
 
 ### 4.2. Error Handling
 
-The application implements a comprehensive error handling strategy leveraging Express.js 5.1.0's enhanced promise support and automatic error forwarding capabilities. Error handling is centralized through middleware so that every forwarded error produces the same response shape and the error's own detail — its message, name and stack — stays server-side. That centralization is not by itself a guarantee of non-disclosure: the envelope still returns the request's own path, and the server-side diagnostic records the request in full, so both are described precisely below.
+The application implements a comprehensive error handling strategy leveraging Express.js 5.1.0's enhanced promise support and automatic error forwarding capabilities. Error handling is centralized through middleware so that every forwarded error produces the same response shape and the error's own detail — its message, name and stack — stays server-side. That centralization is not by itself a guarantee of non-disclosure: the envelope still returns the request's own path, and the server-side diagnostic records the request's target, query and client address, so both are described precisely below. What the diagnostic deliberately does not record is the request's credentials: its headers come from a fixed allow-list rather than from `req.headers` wholesale.
 
 **Error Handling Architecture:**
 - **Route-Level Errors**: Errors thrown in route handlers are automatically caught by Express error middleware
@@ -200,7 +200,7 @@ The application implements a comprehensive error handling strategy leveraging Ex
 
 **Error Handler Behavior (`middleware/errorHandler.js`):**
 - **Registration**: A named export (`module.exports = { errorHandler }`) using the four-argument Express error signature `(err, req, res, next)`, mounted last in `app.js` so it receives errors forwarded from every preceding layer
-- **Diagnostic Logging**: One error log entry records the error message, stack, and name together with the request URL, method, headers, params, and query, plus an ISO timestamp, the User-Agent, and the client IP
+- **Diagnostic Logging**: One error log entry records the error message and name together with the request URL, method, params, and query, plus an ISO timestamp, the client IP, and the request's `host`, `content-type` and `accept` headers — those three by name from a fixed allow-list (`RECORDED_REQUEST_HEADERS`), so an `Authorization` header, a `Cookie` or an API-key header is not written to the log (CWE-532). The error's stack is added in development only, because every frame in a stack names an absolute filesystem path
 - **Client Response**: Status `500` with a JSON envelope of exactly four fields: `error` (the generic string `Internal Server Error`), `status`, `timestamp`, and `path` (`req.originalUrl || req.url`). The detail stays in the log: the client is told that the request failed and which path failed, and nothing about how the server is built
 - **Termination**: The handler deliberately does not call `next()`, ending the request-response cycle; it never produces a 404, because unmatched routes fall through to Express's default 404 handling instead
 

@@ -55,10 +55,13 @@ Hello world
 HTTP/1.1 200 OK
 Content-Type: text/html; charset=utf-8
 Content-Length: 11
+ETag: W/"b-e1AsOh9IyGCa4hLN+2Od7jlnP14"
 Date: [Current Date]
 Connection: keep-alive
 Keep-Alive: timeout=5
 ```
+
+`ETag` is set by Express itself rather than by this tutorial, and because the body is always the same 11 bytes the value shown above is the one every response carries. A client that sends it back as `If-None-Match` receives **`304 Not Modified` with an empty body** instead of the 200 response above — that is the one documented case in which a caller does not get `Hello world`. Any other `If-None-Match` value returns the full 11-byte response, as do `If-Modified-Since` (this endpoint sends no `Last-Modified` for it to compare against) and `Cache-Control: no-cache`. The default is left in place deliberately: turning it off with `app.set('etag', false)` would change framework behaviour the rest of this contract relies on. No consumer in this repository is affected, because none of them sends a conditional header — the Docker and Compose health checks use `wget --spider`, the Kubernetes probes use a plain `httpGet`, and the CD smoke check uses `curl -f`.
 
 ### Performance Characteristics
 - **Target Response Time:** < 100ms (as per F-002 performance criteria)
@@ -131,7 +134,7 @@ The browser will display the plain text response "Hello world" directly on the p
 ### HTTP Client Tools
 - **Postman:** Create a GET request to `http://localhost:3000/hello`
 - **Insomnia:** Set method to GET and URL to `http://localhost:3000/hello`
-- **HTTPie:** `http GET localhost:3000/hello`
+- **HTTPie** (if installed — it is not a prerequisite of this tutorial)**:** `http GET localhost:3000/hello`
 
 ---
 
@@ -238,6 +241,6 @@ curl -X POST http://localhost:3000/hello
 ## Related Documentation
 
 - **Server Setup:** See main README.md for installation and startup instructions
-- **Technical Specifications:** Reference TECHNICAL_SPECIFICATIONS.md for detailed requirements
+- **Technical Specifications:** Reference `blitzy/documentation/Technical Specifications_27cec292-747e-46ad-9dd6-ca621eea00f6.md` for detailed requirements
 - **Implementation Guide:** Check src/backend/routes/hello.js for code details
 - **Testing Guide:** Refer to test suite for validation examples

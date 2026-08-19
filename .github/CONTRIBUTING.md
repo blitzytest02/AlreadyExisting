@@ -64,8 +64,10 @@ Follow these step-by-step instructions to set up your local development environm
 
 3. **Navigate to the backend directory**
    ```bash
-   cd src/backend
+   cd nodejs-tutorial/src/backend
    ```
+   `git clone` leaves you in the directory you ran it from, so enter the clone itself before
+   changing into the package directory. Substitute the clone's actual name if you renamed it.
 
 4. **Install the required dependencies using npm**
    ```bash
@@ -164,7 +166,7 @@ This project follows strict coding standards to ensure code quality, maintainabi
 ### Performance Considerations
 
 - **Response Time**: Maintain response times under 100ms for the `/hello` endpoint
-- **Memory Usage**: Keep memory footprint below 50MB during operation
+- **Memory Usage**: The server sits at ≈ 65MB resident today, ~44MB of which is a bare Node.js process; keep changes from growing that materially rather than aiming at a lower absolute figure
 - **Startup Time**: Ensure server startup completes within 5 seconds
 
 ### Educational Value
@@ -195,6 +197,10 @@ npm run test:coverage
 npm run test:watch
 ```
 
+Coverage is collected on every Jest run, so the watcher prints a coverage table too. It lists no
+files and reads `0%` in every column, even after you press `a` to run all the tests — judge the
+90% requirement above by what `npm test` or `npm run test:coverage` reports.
+
 ## Security Guidelines
 
 Security is important even in tutorial applications. The list below is what to aim for in code you
@@ -213,8 +219,10 @@ first.
 - **Headers**: Add security headers deliberately if you need them; no header middleware is a
   dependency here, and the only header behaviour the app sets is `x-powered-by` being disabled
 - **Logging**: Log security events appropriately, and log the minimum that makes them useful — the
-  shipped request log records the target verbatim and the shipped error diagnostic records the
-  request in full
+  shipped request log records the target verbatim, and the shipped error diagnostic records the
+  request's target, query and client address but takes its headers from a fixed allow-list
+  (`host`, `content-type`, `accept`) so credentials stay out of the log, and adds the error's
+  stack in development only. Follow that pattern rather than logging `req.headers` wholesale
 
 ### Vulnerability Reporting
 

@@ -15,14 +15,31 @@
  *
  * What the handler does (the contract asserted below)
  * --------------------------------------------------
- * On an error forwarded to it, the handler writes one diagnostic log entry of eleven fields,
- * sets status 500, and sends a generic four-key JSON envelope. It deliberately never calls
- * `next()`: it is the terminal middleware, and the response is already sent by the time it
- * returns. Three expressions inside it have two sides each, and all six are covered here:
+ * On an error forwarded to it, the handler writes one diagnostic log entry of nine fields - ten
+ * in development, where the error's stack is added - sets status 500, and sends a generic
+ * four-key JSON envelope. It deliberately never calls `next()`: it is the terminal middleware,
+ * and the response is already sent by the time it returns.
+ *
+ * Two properties of the diagnostic are contract rather than detail, and are asserted as such:
+ *
+ *   requestHeaders   copied from the allow-list ['host', 'content-type', 'accept'] rather than
+ *                    from `req.headers` wholesale, so a credential the client sent in an
+ *                    `Authorization` header or a `Cookie` is not written to the log (CWE-532)
+ *   errorStack       present only when `config.nodeEnv === 'development'`, because every frame
+ *                    in it names an absolute filesystem path
+ *
+ * Its branching expressions have two sides each, and both sides of each are covered here:
  *
  *   requestUrl   req.originalUrl || req.url
  *   clientIP     req.ip || req.connection.remoteAddress
  *   path         req.originalUrl || req.url          (the response field)
+ *   errorStack   development or not
+ *   headers      present or absent, allow-listed name present or absent
+ *
+ * Note on the environment these cases run in: Jest sets `NODE_ENV=test` and `dotenv` does not
+ * override a variable the environment already carries, so `config.nodeEnv` is `'test'` here and
+ * the stack is omitted by default. The development branch is reached with
+ * `jest.replaceProperty`, which `jest.restoreAllMocks()` in `afterEach` puts back.
  *
  * Scope note: this 500 envelope applies ONLY to errors explicitly forwarded with `next(err)`,
  * thrown in a handler, or produced by a rejected promise. A request matching no route is not
@@ -47,18 +64,23 @@ const { errorHandler } = require('../../middleware/errorHandler');
 // The logging sink the handler writes its diagnostic through, also a named export.
 const { logger } = require('../../utils/logger');
 
+// The configuration object the handler reads `nodeEnv` from. It is the same singleton the
+// handler requires, so replacing the property here is what the handler sees.
+const config = require('../../config');
+
 /**
- * Every key the diagnostic log entry is expected to carry, in no particular order.
+ * Every key the diagnostic log entry carries outside development, in no particular order.
  *
  * Asserting the exact key set - not merely that these are present - is what makes an added
  * field a test failure. That matters for a diagnostic: a field silently gaining request
- * content is precisely the change this assertion exists to catch.
+ * content is precisely the change this assertion exists to catch. `userAgent` is absent by
+ * design; the handler no longer reads it, because a value the client chose is not needed to
+ * reproduce a server-side failure.
  *
  * @constant {string[]}
  */
 const DIAGNOSTIC_KEYS = [
     'errorMessage',
-    'errorStack',
     'errorName',
     'requestUrl',
     'requestMethod',
@@ -66,9 +88,24 @@ const DIAGNOSTIC_KEYS = [
     'requestParams',
     'requestQuery',
     'timestamp',
-    'userAgent',
     'clientIP'
 ];
+
+/**
+ * The one field development adds, whose absence elsewhere is the point of the gate.
+ *
+ * @constant {string}
+ */
+const DEVELOPMENT_ONLY_KEY = 'errorStack';
+
+/**
+ * The request headers the diagnostic is allowed to record. Kept here as a literal rather than
+ * imported from the middleware, so a change to the allow-list has to be made deliberately in
+ * two places instead of silently agreeing with itself.
+ *
+ * @constant {string[]}
+ */
+const ALLOWED_HEADERS = ['host', 'content-type', 'accept'];
 
 /**
  * ISO-8601 shape with milliseconds and a `Z` suffix, which is what `Date#toISOString`
@@ -81,10 +118,10 @@ const ISO_8601 = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 /**
  * Builds a fresh mock request.
  *
- * `get` is always present and is the one property most easily forgotten: the handler calls
- * `req.get('User-Agent')` unconditionally, so a request literal without it throws a TypeError
- * before any assertion is reached. `connection` is always present too, so that the `clientIP`
- * fallback can be selected simply by leaving `ip` out.
+ * `connection` is always present so that the `clientIP` fallback can be selected simply by
+ * leaving `ip` out. `get` is present although the handler no longer calls it: it is a spy, and
+ * a case below asserts it was never invoked - which is how this suite records that no
+ * header-derived value reaches the diagnostic by a second route.
  *
  * @param {Object} [overrides] - properties to add to or replace on the request
  * @returns {Object} a mock Express request
@@ -253,24 +290,54 @@ describe('errorHandler middleware', () => {
             expect(typeof loggedDiagnostic()).toBe('object');
         });
 
-        it('records exactly the eleven documented fields', () => {
+        it('records exactly the nine documented fields outside development', () => {
             errorHandler(err, req, res, next);
 
             const diagnostic = loggedDiagnostic();
 
-            expect(Object.keys(diagnostic)).toHaveLength(11);
+            expect(Object.keys(diagnostic)).toHaveLength(9);
             expect(Object.keys(diagnostic).sort()).toEqual(DIAGNOSTIC_KEYS.slice().sort());
         });
 
-        it('records the error message, name and stack from the forwarded error', () => {
+        it('adds the stack, and only the stack, in development', () => {
+            jest.replaceProperty(config, 'nodeEnv', 'development');
+
+            errorHandler(err, req, res, next);
+
+            const diagnostic = loggedDiagnostic();
+
+            expect(Object.keys(diagnostic)).toHaveLength(10);
+            expect(Object.keys(diagnostic).sort())
+                .toEqual(DIAGNOSTIC_KEYS.concat(DEVELOPMENT_ONLY_KEY).sort());
+            expect(diagnostic[DEVELOPMENT_ONLY_KEY]).toBe(err.stack);
+            expect(typeof diagnostic[DEVELOPMENT_ONLY_KEY]).toBe('string');
+        });
+
+        it('withholds the stack outside development, so no absolute path is logged', () => {
+            // 'test' is what Jest sets, and 'production' is what a deployment sets. Neither is
+            // 'development', and the check is an equality rather than a negation, so both take
+            // the same branch - asserted here rather than assumed.
+            for (const environment of ['test', 'production', 'staging', '']) {
+                jest.replaceProperty(config, 'nodeEnv', environment);
+                logger.error.mockClear();
+
+                errorHandler(err, req, res, next);
+
+                const diagnostic = loggedDiagnostic();
+
+                expect(Object.keys(diagnostic)).not.toContain(DEVELOPMENT_ONLY_KEY);
+                expect(diagnostic[DEVELOPMENT_ONLY_KEY]).toBeUndefined();
+                expect(JSON.stringify(diagnostic)).not.toContain('errorHandler.test.js');
+            }
+        });
+
+        it('records the error message and name from the forwarded error', () => {
             errorHandler(err, req, res, next);
 
             const diagnostic = loggedDiagnostic();
 
             expect(diagnostic.errorMessage).toBe('something went wrong');
             expect(diagnostic.errorName).toBe('Error');
-            expect(diagnostic.errorStack).toBe(err.stack);
-            expect(typeof diagnostic.errorStack).toBe('string');
         });
 
         it('carries a custom error subclass name through unchanged', () => {
@@ -289,13 +356,11 @@ describe('errorHandler middleware', () => {
             expect(diagnostic.errorMessage).toBe('bad input');
         });
 
-        it('passes the request method, headers, params and query straight through', () => {
-            const headers = { host: 'localhost:3000', accept: '*/*' };
+        it('passes the request method, params and query straight through', () => {
             const params = { id: '7' };
             const query = { greeting: 'world' };
             const request = createRequest({
                 method: 'POST',
-                headers: headers,
                 params: params,
                 query: query
             });
@@ -305,7 +370,6 @@ describe('errorHandler middleware', () => {
             const diagnostic = loggedDiagnostic();
 
             expect(diagnostic.requestMethod).toBe('POST');
-            expect(diagnostic.requestHeaders).toBe(headers);
             expect(diagnostic.requestParams).toBe(params);
             expect(diagnostic.requestQuery).toBe(query);
         });
@@ -319,22 +383,86 @@ describe('errorHandler middleware', () => {
             expect(new Date(diagnostic.timestamp).toISOString()).toBe(diagnostic.timestamp);
         });
 
-        it('reads the User-Agent through req.get and records what it returns', () => {
-            errorHandler(err, req, res, next);
-
-            expect(req.get).toHaveBeenCalledWith('User-Agent');
-            expect(loggedDiagnostic().userAgent).toBe('jest-test-agent');
-        });
-
-        it('records an undefined User-Agent when the request sent no such header', () => {
-            const request = createRequest({ get: jest.fn(() => undefined) });
+        it('records only the allow-listed headers, so a credential the client sent stays out', () => {
+            const request = createRequest({
+                headers: {
+                    host: 'localhost:3000',
+                    'content-type': 'application/json',
+                    accept: '*/*',
+                    authorization: 'Bearer test-token-AAAA1111',
+                    cookie: 'session=test-session-BBBB2222',
+                    'x-api-key': 'test-api-key-CCCC3333',
+                    'user-agent': 'jest-test-agent',
+                    'x-invented-by-the-client': 'test-header-DDDD4444'
+                }
+            });
 
             errorHandler(err, request, res, next);
 
-            expect(request.get).toHaveBeenCalledWith('User-Agent');
-            expect(loggedDiagnostic().userAgent).toBeUndefined();
-            // The key is still present - it is the value that is absent.
-            expect(Object.keys(loggedDiagnostic())).toContain('userAgent');
+            const diagnostic = loggedDiagnostic();
+
+            expect(diagnostic.requestHeaders).toEqual({
+                host: 'localhost:3000',
+                'content-type': 'application/json',
+                accept: '*/*'
+            });
+            expect(Object.keys(diagnostic.requestHeaders)).toEqual(ALLOWED_HEADERS);
+
+            // The whole entry, not just that one field: a credential must not reach the log
+            // through any field, however the diagnostic is later reshaped.
+            const serialised = JSON.stringify(diagnostic);
+            for (const secret of [
+                'Bearer test-token-AAAA1111',
+                'test-token-AAAA1111',
+                'test-session-BBBB2222',
+                'test-api-key-CCCC3333',
+                'test-header-DDDD4444',
+                'authorization',
+                'x-api-key',
+                'user-agent'
+            ]) {
+                expect(serialised).not.toContain(secret);
+            }
+        });
+
+        it('omits an allow-listed header the request did not send', () => {
+            // Only `host` is present, so the other two are absent rather than undefined - the
+            // logged object shows what the request carried, not what it might have carried.
+            errorHandler(err, req, res, next);
+
+            expect(loggedDiagnostic().requestHeaders).toEqual({ host: 'localhost:3000' });
+        });
+
+        it('records an empty header object when the request carries no headers at all', () => {
+            // Express always assembles `req.headers`, so this is the defensive side of the
+            // branch: whatever else happens, the handler must still answer.
+            const request = createRequest({ headers: undefined });
+
+            errorHandler(err, request, res, next);
+
+            expect(loggedDiagnostic().requestHeaders).toEqual({});
+            expect(res.status).toHaveBeenCalledWith(500);
+            expect(res.json).toHaveBeenCalledTimes(1);
+        });
+
+        it('copies the headers rather than holding a reference to req.headers', () => {
+            errorHandler(err, req, res, next);
+
+            const recorded = loggedDiagnostic().requestHeaders;
+
+            expect(recorded).not.toBe(req.headers);
+
+            // A header arriving after the diagnostic was written cannot appear in it.
+            req.headers.authorization = 'Bearer added-after-the-fact';
+            expect(loggedDiagnostic().requestHeaders).not.toHaveProperty('authorization');
+            expect(recorded).toEqual({ host: 'localhost:3000' });
+        });
+
+        it('never reads req.get, so no header value enters the diagnostic by another route', () => {
+            errorHandler(err, req, res, next);
+
+            expect(req.get).not.toHaveBeenCalled();
+            expect(Object.keys(loggedDiagnostic())).not.toContain('userAgent');
         });
     });
 
@@ -408,7 +536,8 @@ describe('errorHandler middleware', () => {
      * percent-encoding intact, so `%1B` stays three characters there and never becomes ESC. This
      * handler reads `req.query`, and Express's query parser percent-DECODES, so a target of
      * `?x=%E2%80%AE%1B%5B2J` arrives here as genuine U+202E and ESC and is written to the console
-     * unchanged. The same applies to the headers and User-Agent it records.
+     * unchanged. The same applies to the values of the three headers it is allowed to record -
+     * the allow-list bounds which headers reach the log, not how their values are written.
      *
      * Verified against a live Express app before these cases were written: that target yields
      * `req.query.x` with codepoints U+202E U+001B U+005B U+0032 U+004A, while `req.originalUrl`
@@ -456,20 +585,25 @@ describe('errorHandler middleware', () => {
             expect(loggedDiagnostic().requestQuery.x).toBe('before\u2028after\u2029end');
         });
 
-        it('records a header value containing controls verbatim', () => {
-            const req = createRequest({ headers: { 'x-note': 'value\u202Ereversed' } });
+        it('records an allow-listed header value containing controls verbatim', () => {
+            // `accept` is allow-listed, so its value still reaches the console unencoded. The
+            // allow-list bounds WHICH headers are recorded, not how their values are written.
+            const req = createRequest({ headers: { accept: 'value\u202Ereversed' } });
 
             errorHandler(err, req, res, next);
 
-            expect(loggedDiagnostic().requestHeaders['x-note']).toBe('value\u202Ereversed');
+            expect(loggedDiagnostic().requestHeaders.accept).toBe('value\u202Ereversed');
         });
 
-        it('records a User-Agent containing controls verbatim', () => {
-            const req = createRequest({ get: jest.fn(() => 'agent\u001b[2J') });
+        it('drops a non-allow-listed header carrying controls, encoder or not', () => {
+            // The narrower blast radius the allow-list buys: a header nobody listed cannot
+            // distort a log line, because it is not in the line.
+            const req = createRequest({ headers: { 'x-note': 'value\u001b[2J\u202Ereversed' } });
 
             errorHandler(err, req, res, next);
 
-            expect(loggedDiagnostic().userAgent).toBe('agent\u001b[2J');
+            expect(loggedDiagnostic().requestHeaders).toEqual({});
+            expect(JSON.stringify(loggedDiagnostic())).not.toContain('x-note');
         });
 
         it('records an error message containing controls verbatim', () => {

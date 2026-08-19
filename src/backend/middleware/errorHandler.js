@@ -17,6 +17,10 @@
  * - Generic error messages prevent exposure of sensitive implementation details
  * - Detailed error information is logged server-side only
  * - No stack traces or internal error details sent to clients
+ * - The server-side diagnostic is bounded rather than wholesale: request headers are recorded
+ *   from a fixed allow-list, so a credential a client sends in an Authorization header or a
+ *   cookie is not copied into the log (CWE-532), and the stack - the one field that names
+ *   absolute filesystem paths - is recorded in development only
  * 
  * Requirements Addressed:
  * - F-001-RQ-004: Graceful error handling for server startup and runtime errors
@@ -35,6 +39,54 @@
 // Logger provides environment-aware logging with proper formatting
 const { logger } = require('../utils/logger');
 
+// The configuration boundary. Read here for one decision only - whether the diagnostic carries
+// the error's stack - and read through this module rather than from process.env directly,
+// because config/index.js is where every setting in this package is resolved and defaulted.
+const config = require('../config');
+
+/**
+ * The request headers the diagnostic is allowed to record, by lower-case name.
+ *
+ * Express lower-cases incoming header names, so these are compared as written. The three chosen
+ * are the ones that explain a failure without describing the caller: which host was addressed,
+ * what the client said it was sending, and what it said it would accept.
+ *
+ * This is an allow-list on purpose. A deny-list of secret-looking names ('authorization',
+ * 'cookie', 'x-api-key', ...) has to be right about every header a client might invent, and the
+ * one it has not heard of is the one that reaches the log. An allow-list is wrong in the
+ * harmless direction: a header nobody listed is simply absent from the diagnostic.
+ *
+ * @constant {string[]}
+ */
+const RECORDED_REQUEST_HEADERS = ['host', 'content-type', 'accept'];
+
+/**
+ * Copies the allow-listed headers out of a request's header set.
+ *
+ * Absent headers are omitted rather than recorded as undefined, so the logged object shows what
+ * the request actually carried. The `headers` guard exists because this must never be the reason
+ * an error response is not sent: a request object without headers would otherwise throw here,
+ * inside the handler whose job is to answer when something has already gone wrong.
+ *
+ * @param {Object} [headers] - the request's header set, as Express assembled it
+ * @returns {Object} a new object holding only the allow-listed headers that were present
+ */
+function recordedRequestHeaders(headers) {
+    const recorded = {};
+
+    if (!headers) {
+        return recorded;
+    }
+
+    for (const name of RECORDED_REQUEST_HEADERS) {
+        if (headers[name] !== undefined) {
+            recorded[name] = headers[name];
+        }
+    }
+
+    return recorded;
+}
+
 /**
  * Express Error Handling Middleware Function
  * 
@@ -50,7 +102,8 @@ const { logger } = require('../utils/logger');
  * 
  * Error Handling Flow:
  * 1. Receives error from Express framework (manual next(err) or automatic promise rejection)
- * 2. Logs detailed error information including stack trace for debugging
+ * 2. Logs the error and the request context needed to reproduce it - the request's headers are
+ *    recorded from an allow-list, and the stack trace is included in development only
  * 3. Sets HTTP 500 Internal Server Error status code
  * 4. Sends generic JSON error response to client
  * 5. Terminates request-response cycle (does not call next())
@@ -94,32 +147,48 @@ const { logger } = require('../utils/logger');
  * });
  */
 function errorHandler(err, req, res, next) {
-    // Step 1: Log comprehensive error details for debugging and monitoring
-    // This provides developers with detailed error information including:
+    // Step 1: Log the error details needed to diagnose the failure, and only those
+    // This provides developers with:
     // - Error message and type
-    // - Complete stack trace for debugging
-    // - Request context (URL, method, headers) for reproduction
-    // - Timestamp and environment information (handled by logger utility)
-    logger.error('Unhandled application error occurred:', {
+    // - Request context (target, method, allow-listed headers, params, query) for reproduction
+    // - A timestamp and the client address
+    // - The stack trace, in development only
+    //
+    // What it deliberately does not provide is the request's own credentials. The headers are
+    // copied from a fixed allow-list rather than wholesale, because `req.headers` carries
+    // whatever the client sent - `Authorization`, `Cookie`, an API key - and a diagnostic that
+    // copies it out puts those values in a log file, which is the weakness CWE-532 describes.
+    // A failure is reproducible without them.
+    const diagnostic = {
         // Error details for debugging
         errorMessage: err.message,
-        errorStack: err.stack,
         errorName: err.name,
-        
+
         // Request context for error reproduction and analysis
         requestUrl: req.originalUrl || req.url,
         requestMethod: req.method,
-        requestHeaders: req.headers,
+        requestHeaders: recordedRequestHeaders(req.headers),
         requestParams: req.params,
         requestQuery: req.query,
-        
+
         // Additional context for debugging
         timestamp: new Date().toISOString(),
-        userAgent: req.get('User-Agent'),
-        
+
         // IP address for tracking (with privacy considerations)
         clientIP: req.ip || req.connection.remoteAddress
-    });
+    };
+
+    // The stack is the field that names absolute filesystem paths - every frame carries the file
+    // it came from - so it is recorded where those paths are the developer's own and withheld
+    // where the log may travel further than the machine that wrote it. `errorName` and
+    // `errorMessage` above identify the failure in every environment; the frames narrow it down
+    // for whoever is fixing it. The check reads config.nodeEnv rather than process.env so this
+    // module has one configuration source like every other module here.
+    if (config.nodeEnv === 'development') {
+        diagnostic.errorStack = err.stack;
+    }
+
+    logger.error('Unhandled application error occurred:', diagnostic);
 
     // Step 2: Set HTTP status code to 500 (Internal Server Error)
     // This indicates to the client that a server-side error occurred

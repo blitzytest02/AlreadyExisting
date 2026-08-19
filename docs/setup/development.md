@@ -265,6 +265,12 @@ NODE_ENV=development
 HOST=localhost
 ```
 
+`PORT` and `NODE_ENV` change what the application does. `HOST` does not: `config/index.js` reads
+it and the startup summary prints it, but `server.js` calls `server.listen(config.port)` with no
+host argument, so the server accepts connections on every interface whatever `HOST` says. Setting
+it to `0.0.0.0` for a container changes nothing, and honouring `localhost` would break the
+container health check and the Kubernetes probes, which reach the port from outside loopback.
+
 **Logging Configuration:**
 
 `.env.example` also carries a `LOG_LEVEL` entry, and it is worth knowing before you set it that
@@ -369,14 +375,18 @@ only.
 [INFO]: 🚀 HTTP Server successfully started and listening on port 3000
 [INFO]: 🌐 Server is ready to accept HTTP requests
 [INFO]: 📍 Local development URL: http://localhost:3000
-[INFO]: ⚡ Node.js v22.16.0 | Express 5.1.0 | Environment: development
+[INFO]: ⚡ Node.js v22.23.2 | Express 5.2.1 | Environment: development
 [INFO]: 🎯 Tutorial application initialized successfully
 ```
 
 Running `NODE_ENV=production npm start` prints only the five server lines, without the
-configuration summary and without the `[INFO]:` prefix. The Node.js version comes from
-`process.version`; the `Express 5.1.0` token is a fixed string in `server.js`, so use
-`npm ls express` to see the version actually installed.
+configuration summary and without the `[INFO]:` prefix, and its third line reads
+`📍 Listening on all network interfaces at port 3000` — `server.listen(config.port)` passes no
+host argument, so nothing is bound to `localhost` in particular and only a development reader is
+certain to be at that URL. Both version tokens are read at run time rather than written into the
+message as fixed strings: Node.js from `process.version` and Express from the installed
+package's own manifest, so `npm ls express` reports the same version the banner shows — `5.2.1`
+for the committed lockfile.
 
 **Process Details:**
 - Executes `server.js` directly using Node.js
@@ -436,13 +446,44 @@ Look for these indicators of successful server startup:
 
 **Port Already in Use (EADDRINUSE):**
 ```
-❌ Server startup failed: Port 3000 is already in use
-💡 Resolution suggestions:
-   • Stop the process using port 3000: press Ctrl+C in its terminal, or
-     find its PID with `lsof -i :3000 -sTCP:LISTEN` and run `kill <PID>`
-   • Use a different port: PORT=3001 npm start
-   • Check for other running instances of this application
+[ERROR]: ❌ Server startup failed: Port 3000 is already in use
+[ERROR]: 💡 Resolution suggestions:
+[ERROR]:    • Start on a free port instead: PORT=3001 npm start
+[ERROR]:    • Or release port 3000: press Ctrl+C in the terminal that started the process holding it
+[ERROR]:    • If that terminal is gone, find the owning PID with whichever port inspector this machine has - ss, lsof or fuser on Linux and macOS, netstat on Windows - and signal only that PID
+[ERROR]:    • Check for other running instances of this application
+[ERROR]:    • Verify no other services are using port 3000
+[ERROR]: 🛑 Application terminating due to server startup failure
+[ERROR]: ⏰ Shutdown initiated at: 2026-08-19T13:24:54.534Z
 ```
+
+The configuration summary prints first, then these nine lines, and the process exits with code 1.
+The `[ERROR]:` prefix is there because `NODE_ENV` is `development`; in any other environment the
+same nine lines appear without it. The timestamp is the moment the bind failed, so yours will
+differ. The suggested port is derived from the one that failed (`PORT` + 1), so on a conflict over
+4000 the first bullet reads `PORT=4001 npm start`. No port-inspection tool is assumed to be
+present: whether `ss`, `lsof` or `fuser` exists depends on the machine, which is why `Ctrl+C` is
+offered first and the fallback names alternatives rather than prescribing one command. Section 8.1
+below shows how to confirm which PID owns the port and signal only that one.
+
+**Invalid Port Value:**
+```
+[ERROR]: ❌ Server startup failed: 65536 is not a usable port number
+[ERROR]: 💡 Resolution suggestions:
+[ERROR]:    • Set PORT to a whole number from 1024 to 65535, then start again
+[ERROR]:    • Or start on the documented default: PORT=3000 npm start
+[ERROR]:    • Check src/backend/.env - the PORT value recorded there is used whenever the shell sets none
+[ERROR]: 🛑 Application terminating due to server startup failure
+[ERROR]: ⏰ Shutdown initiated at: 2026-08-19T13:24:54.534Z
+```
+
+`config/index.js` prints its own `Warning: Port 65536 is outside recommended range (1024-65535)`
+line before these seven, because it warns about the value rather than rejecting it. A `PORT`
+outside 0–65535 is then rejected by `server.listen()` before any socket exists, so it fails
+synchronously rather than through the server's `error` event. `server.js` catches that throw and
+routes it to the same reporter, which is why an invalid port reads like a taken one instead of
+printing a `RangeError` stack trace. A value that is not a number at all — `PORT=abc` — never
+reaches this path: `config/index.js` parses it, gets `NaN` and falls back to 3000.
 
 **Solution Steps:**
 1. Identify the process using the port
@@ -530,8 +571,9 @@ done
 ```
 
 **Expected Performance:**
-- Response time: < 100ms
-- Memory usage: < 50MB
+- Response time: < 100ms (single-digit milliseconds on a local machine)
+- Memory usage: ≈ 65MB resident, as reported by `ps -o rss= -p <server pid>` — most of it the
+  Node.js runtime, since a bare `node` process already occupies ~44MB
 - CPU usage: < 5% (idle)
 
 ### 5.3 Error Response Testing
@@ -752,11 +794,13 @@ npm run dev
 - The `[INFO]:`/`[ERROR]:` prefixes, and the configuration summary printed at startup, appear
   because `NODE_ENV` is `development`
 - An error forwarded to the error handler produces one diagnostic entry recording the error's
-  message, stack and name together with the request URL, method, headers, params and query, an
-  ISO timestamp, the User-Agent and the client address. Most of that stays server-side, but not
+  message and name together with the request URL, method, params and query, an ISO timestamp, the
+  client address and the request's `host`, `content-type` and `accept` headers — those three from
+  a fixed allow-list, so an `Authorization` header or a `Cookie` never reaches the log — plus the
+  error's stack in development only. Most of that stays server-side, but not
   all of it, so take the envelope field by field rather than assuming it is generic. Omitted from
   the client entirely: the message, stack and name, the method, the headers, the params, the
-  query, the User-Agent and the client address — and `error` is always the fixed string
+  query and the client address — and `error` is always the fixed string
   `Internal Server Error`. Returned to the client: `status`, a `timestamp`, and `path`, which
   repeats `req.originalUrl || req.url` with the query string included, so the caller gets back
   the target it sent. `docs/architecture/overview.md` states the field-by-field contract
@@ -773,14 +817,27 @@ npm run dev
 
 #### File Watching Configuration
 
-Nodemon monitors these file types by default:
+This is the whole of the shipped `src/backend/nodemon.json`:
 ```json
 {
-  "ext": "js,json,env",
-  "ignore": ["node_modules/", ".git/"],
-  "delay": "1000ms"
+  "watch": ["./"],
+  "ext": "js,json",
+  "ignore": [
+    "tests/",
+    "node_modules/",
+    "coverage/",
+    "package-lock.json"
+  ]
 }
 ```
+
+`"watch": ["./"]` resolves to the package directory, so nodemon watches `src/backend`
+recursively and monitors `.js` and `.json` files only. `.env` is not among them, and no `delay`
+is configured, so a saved change restarts the process straight away rather than after a pause.
+On top of the four ignores above nodemon applies its own defaults, which add `.git/`,
+`node_modules/`, `coverage/`, `.nyc_output/`, `.sass-cache/` and `bower_components/`. Run
+`npx nodemon --dump server.js` from `src/backend` to print the configuration nodemon actually
+resolved, watch root included.
 
 ### 7.3 Testing During Development
 
@@ -809,6 +866,12 @@ npm run test:coverage
 
 npm run test:watch
 ```
+
+Coverage collection is enabled for every Jest run (`collectCoverage: true` in
+`src/backend/jest.config.js`), so watch mode prints a coverage table too. The watcher's table
+lists no files and reads `0%` in every column, and it stays at `0%` even after you press `a` to
+run all the tests — so read coverage from `npm test` or `npm run test:coverage`, never from the
+watcher.
 
 ### 7.4 Debugging Strategies
 
@@ -1192,15 +1255,21 @@ environments.
 > code sample below (§9.2 onwards) describes an enhancement you would be adding yourself: the
 > repository's dependencies are `express` and `dotenv` at runtime plus `jest`, `nodemon` and
 > `supertest` for development, and nothing here — structured logging, security middleware,
-> performance monitoring, database access — is installed or wired up. §9.1 is the exception: it
-> uses only `NODE_ENV`, `PORT` and `HOST`, which `config/index.js` does read — `NODE_ENV` and
-> `PORT` change what the application does, while `HOST` only appears in the startup summary.
+> performance monitoring, database access — is installed or wired up. §9.1 is the exception, and
+> only in part: the variables it uses are ones `config/index.js` really reads — `NODE_ENV` and
+> `PORT` change what the application does, while `HOST` only appears in the startup summary. The
+> per-environment *files* §9.1 creates are not shipped behaviour. `config/index.js` calls
+> `require('dotenv').config()` with no `path` argument, so the loader reads `src/backend/.env` and
+> nothing else; `.env.development`, `.env.test` and `.env.production` sit there with no effect
+> until you add the loader under "Dynamic Environment Loading", which is itself an enhancement.
 
 ### 9.1 Environment-Specific Configuration
 
 #### Multiple Environment Files
 
-Create environment-specific configuration files:
+Create environment-specific configuration files. On their own these three files change nothing —
+the shipped loader reads only `.env` — so they take effect only once you add the dynamic loader
+shown at the end of this subsection:
 
 ```bash
 cp .env.example .env.development
@@ -1235,7 +1304,11 @@ absent from these examples: the tutorial's logger has two fixed levels and no fi
 `LOG_LEVEL` line here would look like configuration while doing nothing. It becomes meaningful only
 alongside the optional Winston enhancement in section 9.3 below.
 
-#### Dynamic Environment Loading
+#### Dynamic Environment Loading (enhancement — not shipped)
+
+The shipped `config/index.js` does not do this. Replacing its bare `require('dotenv').config()`
+call with the form below is what makes the per-environment files above load; until then they are
+inert:
 
 ```javascript
 const path = require('path');
@@ -1587,7 +1660,7 @@ jobs:
 
 - **Official Documentation**: [Node.js Docs](https://nodejs.org/docs/), [Express.js Guide](https://expressjs.com/)
 - **Advanced Topics**: Streams, Clustering, Worker Threads
-- **Security**: [Node.js Security Best Practices](https://nodejs.org/en/docs/guides/security/)
+- **Security**: [Node.js Security Best Practices](https://nodejs.org/en/learn/getting-started/security-best-practices)
 
 #### JavaScript ES2022+ Features
 
