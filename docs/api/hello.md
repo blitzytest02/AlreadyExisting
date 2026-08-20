@@ -11,7 +11,7 @@ This document provides comprehensive details for the `/hello` API endpoint. This
 - **Path:** `/hello`
 - **Method:** `GET`
 - **Description:** Responds with a static "Hello world" message to demonstrate basic HTTP server functionality and RESTful endpoint implementation.
-- **Framework:** Express.js v5.1.0 with Node.js v22.16.0 LTS
+- **Framework:** Express 5.x with Node.js 22.x LTS (validated on Express 5.2.1 and Node v22.23.2)
 - **Purpose:** Educational demonstration of HTTP request-response patterns and Express routing fundamentals
 
 ---
@@ -19,8 +19,9 @@ This document provides comprehensive details for the `/hello` API endpoint. This
 ## Request Specification
 
 ### HTTP Method
-- **Supported:** `GET` only
-- **Unsupported Methods:** All other HTTP methods (POST, PUT, DELETE, PATCH, etc.) will result in 404 responses
+- **Registered:** `GET`
+- **Framework-Generated Methods:** Express automatically serves `HEAD /hello` (200, headers only) and `OPTIONS /hello` (200, `Allow: GET, HEAD`) for the registered GET route; these are framework-generated responses, not additional application routes
+- **Unmatched Methods:** `POST`, `PUT`, `PATCH`, `DELETE`, and `TRACE` return 404 because no route/method pair matches
 
 ### Request Parameters
 This endpoint does not require any parameters, headers, or request body:
@@ -54,10 +55,13 @@ Hello world
 HTTP/1.1 200 OK
 Content-Type: text/html; charset=utf-8
 Content-Length: 11
+ETag: W/"b-e1AsOh9IyGCa4hLN+2Od7jlnP14"
 Date: [Current Date]
 Connection: keep-alive
 Keep-Alive: timeout=5
 ```
+
+`ETag` is set by Express itself rather than by this tutorial, and because the body is always the same 11 bytes the value shown above is the one every response carries. A client that sends it back as `If-None-Match` receives **`304 Not Modified` with an empty body** instead of the 200 response above, and a client that sends the wildcard `If-None-Match: *` receives the same 304, because the wildcard matches whatever representation the endpoint has. Those two are the documented cases in which a caller does not get `Hello world`. An `If-None-Match` carrying any other tag — one that is neither the wildcard nor a match for the value above — returns the full 11-byte response, as do `If-Modified-Since` (this endpoint sends no `Last-Modified` for it to compare against) and `Cache-Control: no-cache`. The default is left in place deliberately: turning it off with `app.set('etag', false)` would change framework behaviour the rest of this contract relies on. No consumer in this repository is affected, because none of them sends a conditional header — the Docker and Compose health checks use `wget --spider`, the Kubernetes probes use a plain `httpGet`, and the CD smoke check uses `curl -f`.
 
 ### Performance Characteristics
 - **Target Response Time:** < 100ms (as per F-002 performance criteria)
@@ -69,8 +73,8 @@ Keep-Alive: timeout=5
 
 ## Error Responses
 
-### Method Not Allowed
-- **Scenario:** When using HTTP methods other than GET (POST, PUT, DELETE, etc.)
+### Unmatched Method on an Existing Path
+- **Scenario:** When sending `POST`, `PUT`, `PATCH`, `DELETE`, or `TRACE` to `/hello`
 - **Status Code:** `404 Not Found`
 - **Reason:** Express.js default behavior for unmatched route/method combinations
 - **Content-Type:** `text/html; charset=utf-8`
@@ -130,15 +134,15 @@ The browser will display the plain text response "Hello world" directly on the p
 ### HTTP Client Tools
 - **Postman:** Create a GET request to `http://localhost:3000/hello`
 - **Insomnia:** Set method to GET and URL to `http://localhost:3000/hello`
-- **HTTPie:** `http GET localhost:3000/hello`
+- **HTTPie** (if installed — it is not a prerequisite of this tutorial)**:** `http GET localhost:3000/hello`
 
 ---
 
 ## Technical Implementation
 
 ### Framework Details
-- **Express Version:** 5.1.0 (latest stable with enhanced promise support)
-- **Node.js Version:** v22.16.0 LTS (Active LTS until October 2025)
+- **Express Version:** declared `^5.1.0`, resolved to 5.2.1 by the committed lockfile (enhanced promise support)
+- **Node.js Version:** 22.x LTS, validated on v22.23.2 (`package.json` requires >= 18.0.0)
 - **Routing Pattern:** Express Router with modular organization
 - **Response Method:** `res.send()` with automatic Content-Type detection
 
@@ -153,7 +157,7 @@ router.get('/', (req, res) => {
 ### Requirements Compliance
 - **F-002-RQ-001:** ✅ Route definition for `/hello` path with GET method support
 - **F-002-RQ-002:** ✅ Returns exact text "Hello world"
-- **F-002-RQ-003:** ✅ Supports only GET HTTP method
+- **F-002-RQ-003:** ✅ Registers only the GET HTTP method; Express generates the documented HEAD and OPTIONS responses
 - **F-002-RQ-004:** ✅ Includes appropriate Content-Type header (`text/html; charset=utf-8`)
 
 ---
@@ -161,7 +165,7 @@ router.get('/', (req, res) => {
 ## Integration Notes
 
 ### Server Mounting
-This endpoint router is mounted in the main application at the `/hello` path, making the final accessible URL `GET /hello` when the server runs on the default port 3000.
+The public route is assembled in two hops: `app.js` mounts the route aggregator at `/`; `routes/index.js` mounts `helloRouter` at `/hello`; and `routes/hello.js` registers `GET /`, producing the public route `GET /hello`. With the server on the default port 3000, the accessible URL is therefore `http://localhost:3000/hello`.
 
 ### Dependencies
 - Requires HTTP server initialization (Feature F-001)
@@ -184,7 +188,7 @@ This endpoint demonstrates:
 - Verify 200 status code response
 - Confirm exact "Hello world" response text
 - Validate Content-Type header setting
-- Test GET method exclusive support
+- Validate registered `GET /hello`, Express-generated `HEAD /hello` and `OPTIONS /hello`, and 404 responses for POST, PUT, PATCH, DELETE, and TRACE
 
 ### Performance Testing
 - Response time should be under 100ms
@@ -200,10 +204,16 @@ This endpoint demonstrates:
 
 ## Security Considerations
 
-- **Input Validation:** Not applicable (no user input accepted)
+- **Input Validation:** Not applicable to the response — the handler reads nothing from the request
+  and returns the same 11 bytes regardless of what is sent. It is not true that the request is
+  ignored entirely, though: `requestLogger` runs first and records the method, the pathname and the
+  body. A query string appended to `/hello` is cut off before the log line is written, so it is
+  recorded nowhere, and the pathname that is recorded is escaped to printable ASCII and bounded to
+  256 characters
 - **Authentication:** None required (tutorial endpoint)
 - **Authorization:** No access restrictions
-- **Data Exposure:** Only static text response, no sensitive data
+- **Data Exposure:** The response body is a static string and exposes nothing about the server. What
+  leaves the process is the log line described above
 - **Rate Limiting:** Not implemented (tutorial scope)
 
 ---
@@ -216,18 +226,15 @@ This endpoint demonstrates:
 |-------|---------|----------|
 | Server not running | Connection refused | Start server with `npm start` |
 | Wrong port | 404 or connection error | Verify server running on port 3000 |
-| Method error | 404 response | Ensure using GET method only |
+| Unmatched method | 404 response | Use `GET`; Express also generates `HEAD` and `OPTIONS` responses for the registered GET route |
 | Network issues | Timeout | Check localhost connectivity |
 
 ### Validation Commands
 ```bash
-# Test server accessibility
 curl -I http://localhost:3000/hello
 
-# Verify response content
 curl -s http://localhost:3000/hello | grep "Hello world"
 
-# Test method restriction
 curl -X POST http://localhost:3000/hello
 ```
 
@@ -236,6 +243,6 @@ curl -X POST http://localhost:3000/hello
 ## Related Documentation
 
 - **Server Setup:** See main README.md for installation and startup instructions
-- **Technical Specifications:** Reference TECHNICAL_SPECIFICATIONS.md for detailed requirements
+- **Technical Specifications:** Reference `blitzy/documentation/Technical Specifications_27cec292-747e-46ad-9dd6-ca621eea00f6.md` for detailed requirements
 - **Implementation Guide:** Check src/backend/routes/hello.js for code details
 - **Testing Guide:** Refer to test suite for validation examples

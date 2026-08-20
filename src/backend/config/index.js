@@ -52,7 +52,18 @@ const config = {
      * Usage Examples:
      * - Development: PORT=3000 (default)
      * - Production: PORT=8080 or PORT=80 (depending on deployment)
-     * - Testing: PORT=0 (allows OS to assign available port)
+     * 
+     * What the expression below does with a value it cannot use: `parseInt` returns NaN for a
+     * non-numeric value and 0 for "0", both of which are falsy, so `|| 3000` resolves either to
+     * the default. The variable therefore never yields an OS-assigned port and never reports a
+     * bad value - `PORT=abc` and `PORT=0` both bind 3000 silently. Two consequences worth
+     * knowing:
+     * - An ephemeral port is obtained by calling `server.listen(0)` directly, which is what
+     *   tests/integration/hello.test.js does; it cannot be requested through the environment.
+     * - Set PORT to a number when running the container. infrastructure/docker/Dockerfile's
+     *   HEALTHCHECK interpolates the raw value into its probe URL rather than this coerced one,
+     *   so a non-numeric PORT leaves the application serving on 3000 while the probe fails on
+     *   the literal text and Docker eventually reports a working container unhealthy.
      * 
      * @type {number}
      * @default 3000

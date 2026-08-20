@@ -15,8 +15,8 @@ If you encounter any bugs or issues while using the tutorial application, please
 1. **Check existing issues** - Search through existing issues to avoid duplicates
 2. **Use the bug report template** - Create a new issue using our bug report template (`.github/ISSUE_TEMPLATE/bug_report.md`)
 3. **Provide detailed information** - Include:
-   - Node.js version (we recommend v22.16.0 LTS)
-   - Express.js version (should be 5.1.0)
+   - Node.js version (we recommend the 22.x LTS line; this project is validated on v22.23.2)
+   - Express version (`npm ls express`; the committed lockfile resolves 5.2.1)
    - Operating system and version
    - Steps to reproduce the issue
    - Expected vs. actual behavior
@@ -48,8 +48,8 @@ Follow these step-by-step instructions to set up your local development environm
 
 ### Prerequisites
 
-- **Node.js v22.16.0 LTS** - This tutorial uses the latest Long Term Support version with codename 'Jod'
-- **npm** - Comes bundled with Node.js (version 11.4.1 or later)
+- **Node.js 22.x LTS** - the 'Jod' line; `package.json` requires >= 18.0.0, and this project is validated on v22.23.2. Use 20 or 22 for the development tooling, which declares narrower engine ranges than `package.json` does
+- **npm** - Comes bundled with Node.js (`package.json` requires >= 8.0.0; validated on 11.18.0)
 - **Git** - For version control
 
 ### Setup Instructions
@@ -64,19 +64,26 @@ Follow these step-by-step instructions to set up your local development environm
 
 3. **Navigate to the backend directory**
    ```bash
-   cd src/backend
+   cd nodejs-tutorial/src/backend
    ```
+   `git clone` leaves you in the directory you ran it from, so enter the clone itself before
+   changing into the package directory. Substitute the clone's actual name if you renamed it.
 
 4. **Install the required dependencies using npm**
    ```bash
    npm install
    ```
-   This reads the `package.json` file and installs Express.js 5.1.0 and other dependencies.
+   This reads `package.json`, installs the versions `package-lock.json` pins - Express 5.2.1 and dotenv 16.6.1, plus Jest 30.4.2, nodemon 3.1.14 and Supertest 7.1.1 - and reports `added 402 packages, and audited 403 packages`.
 
-5. **Create a local environment file from the example**
+5. **Check the local environment file**
    ```bash
-   cp .env.example .env
+   [ -f .env ] || cp .env.example .env
    ```
+   `src/backend/.env` is committed, so a fresh clone already has one and this step is a
+   confirmation rather than a copy. Run the guard rather than a bare `cp`: the template does not
+   set `APP_NAME`, which the committed file does, so overwriting `.env` with it changes the app
+   name in the startup banner to the `config/index.js` fallback. `git checkout -- .env` restores
+   the committed file if that has already happened.
 
 6. **Start the development server**
    ```bash
@@ -109,20 +116,15 @@ Before submitting a pull request, please ensure you follow these guidelines:
    - Increase the version numbers in any examples and the README.md to the new version that this Pull Request would represent
 
 4. **Testing requirements**
-   - Ensure your code passes all tests by running:
+   - From the `src/backend` package directory, ensure your code passes all tests by running:
      ```bash
      npm test
      ```
    - Tests are executed using the configuration defined in `jest.config.js`
 
 5. **Code quality standards**
-   - Ensure your code adheres to the linting rules defined in `.eslintrc.js`
-   - Follow formatting rules specified in `.prettierrc`
-   - Run the following commands to check your code:
-     ```bash
-     npm run lint
-     npm run format
-     ```
+   - Follow the code style conventions documented in `.eslintrc.js`
+   - Follow the formatting conventions documented in `.prettierrc`
 
 ### Submission Process
 
@@ -133,10 +135,10 @@ Before submitting a pull request, please ensure you follow these guidelines:
 
 2. **CI Pipeline validation**
    - The CI pipeline defined in `.github/workflows/ci.yml` must pass
-   - This includes automated testing, linting, and security checks
+   - On Node 22.x, it runs `npm ci`, `npm audit`, and `npm test` from the `src/backend` package directory
 
 3. **Code review process**
-   - A code owner from `.github/CODEOWNERS` will review your pull request
+   - A maintainer will review your pull request
    - Address any feedback or requested changes
    - Ensure all conversations are resolved before merge
 
@@ -161,15 +163,15 @@ This project follows strict coding standards to ensure code quality, maintainabi
 
 ### Framework Guidelines
 
-- **Express.js 5.1.0**: Leverage the latest features including automatic promise rejection handling
+- **Express 5.x**: Leverage its features including automatic promise rejection handling
 - **Middleware**: Use Express middleware patterns for request processing
 - **Route Organization**: Keep routes simple and focused for educational clarity
-- **Security**: Follow security best practices using Helmet.js and input validation
+- **Security**: This tutorial deliberately ships no security middleware. Helmet, CORS, rate limiting, authentication and input-validation layers are none of them dependencies here, so do not write guidance or code that assumes one is present — propose adding one as its own change rather than folding it into an unrelated pull request
 
 ### Performance Considerations
 
 - **Response Time**: Maintain response times under 100ms for the `/hello` endpoint
-- **Memory Usage**: Keep memory footprint below 50MB during operation
+- **Memory Usage**: The server sits at ≈ 65MB resident today, ~44MB of which is a bare Node.js process; keep changes from growing that materially rather than aiming at a lower absolute figure
 - **Startup Time**: Ensure server startup completes within 5 seconds
 
 ### Educational Value
@@ -188,32 +190,58 @@ All contributions must include appropriate testing:
 - **Unit Tests**: Test individual functions and modules
 - **Integration Tests**: Test the `/hello` endpoint using Supertest
 - **Coverage**: Maintain at least 90% code coverage
-- **Performance**: Ensure tests complete within 30 seconds
+- **Performance**: Keep each individual test within Jest's configured 30-second timeout
 
 ### Running Tests
 
 ```bash
-# Run all tests
 npm test
 
-# Run tests with coverage
 npm run test:coverage
 
-# Run tests in watch mode during development
 npm run test:watch
 ```
 
+Coverage is collected on every Jest run, so the watcher prints a coverage table too. It lists no
+files and reads `0%` in every column, even after you press `a` to run all the tests — judge the
+90% requirement above by what `npm test` or `npm run test:coverage` reports.
+
 ## Security Guidelines
 
-Security is important even in tutorial applications:
+Security is important even in tutorial applications. The list below is what to aim for in code you
+contribute, and it now describes most of what this project already does — `src/backend/README.md`
+records the shipped middleware's behaviour and the two properties it deliberately keeps. Read that
+section before changing either middleware module: its rules about what may reach a log line are
+asserted case by case in `tests/unit/requestLogger.test.js` and `tests/unit/errorHandler.test.js`,
+so a change that relaxes one fails a test rather than passing quietly.
 
 ### Security Practices
 
-- **Input Validation**: Validate all inputs, even for simple endpoints
-- **Error Handling**: Never expose sensitive information in error messages
-- **Dependencies**: Keep dependencies updated and run `npm audit` regularly
-- **Headers**: Use Helmet.js for security headers
-- **Logging**: Log security events appropriately
+- **Input Validation**: Validate all inputs, even for simple endpoints. Nothing in this project
+  validates input today, and no body parser is mounted, so there is no existing pattern to copy
+- **Error Handling**: Never expose sensitive information in error messages. Note that the shipped
+  500 envelope does return the request's own target, query string included — deliberately, because
+  the caller already has it and it is what lets the caller correlate the failure; the server-side
+  diagnostic for the same failure keeps only the pathname
+- **Dependencies**: Keep dependencies updated and run `npm audit` regularly. It currently reports
+  zero advisories, but `npm ci` warns about four deprecated dev-only packages and one gated install
+  script; `src/backend/README.md` inventories all five and which of them can actually be fixed.
+  One action is outstanding and belongs to a pull request that owns dependency policy: move
+  `supertest` off the deprecated `7.1.1` pin to `7.1.3` or later, regenerate the lockfile, and
+  re-run `npm ci` and `npm audit`
+- **Headers**: Add security headers deliberately if you need them; no header middleware is a
+  dependency here, and the app sets exactly two header behaviours of its own — `x-powered-by` is
+  disabled in `app.js`, and `errorHandler` marks its 500 response `X-Content-Type-Options:
+  nosniff` because that response echoes the caller's request target. The successful `/hello`
+  response carries neither a CSP nor any other hardening header
+- **Logging**: Log security events appropriately, and log the minimum that makes them useful. The
+  shipped middleware is the pattern to follow: both modules log the pathname rather than the target,
+  so a caller's query values never reach the log (CWE-532); the error diagnostic keeps only the
+  number of query parameters, takes its headers from a fixed allow-list (`host`, `content-type`,
+  `accept`), records the client address, and adds the error's stack in development only; and every
+  value either module writes is escaped to printable ASCII and bounded to 256 characters, so no
+  request can forge a log entry, drive the terminal reading the log, or make one request cost an
+  unbounded amount of log. Follow that rather than logging `req.headers` or `req.query` wholesale
 
 ### Vulnerability Reporting
 
