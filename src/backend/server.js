@@ -178,8 +178,9 @@ const server = http.createServer(app);
  * The port is bound only when this file is the process entry point
  * (`node server.js` / `npm start`). When the module is imported instead - as
  * tests/integration/hello.test.js does - it must NOT bind, so the importer can
- * call server.listen(0) itself and take an OS-assigned ephemeral port. Binding
- * at import time would make that second listen() throw ERR_SERVER_ALREADY_LISTEN.
+ * call server.listen(0) itself and take an OS-assigned ephemeral port.
+ * Binding at import time would make that second listen() throw
+ * ERR_SERVER_ALREADY_LISTEN.
  */
 if (require.main === module) {
     server.listen(config.port, () => {
@@ -484,7 +485,8 @@ process.on('uncaughtException', (error) => {
  * - Comprehensive error handling with specific error condition detection
  * - Environment-aware configuration management with fallback defaults
  * - Production-ready logging and monitoring integration points
- * - Graceful startup procedures with proper resource management and fault reporting
+ * - Graceful startup procedures with proper resource management and fault
+ *   reporting
  * 
  * Educational Impact:
  * - Provides clear example of Node.js HTTP server creation and management
@@ -516,8 +518,8 @@ process.on('uncaughtException', (error) => {
  *
  * Exported unconditionally, independently of the listen guard above, so that
  * importers receive a real http.Server instance that is not yet listening.
- * tests/integration/hello.test.js relies on exactly this: it requires the module,
- * calls server.listen(0) in beforeAll and server.close() in afterAll.
+ * tests/integration/hello.test.js relies on exactly this: it requires the
+ * module, calls server.listen(0) in beforeAll and server.close() in afterAll.
  *
  * @module server
  * @type {import('http').Server}
