@@ -19,8 +19,9 @@ This document provides comprehensive details for the `/hello` API endpoint. This
 ## Request Specification
 
 ### HTTP Method
-- **Supported:** `GET` only
-- **Unsupported Methods:** All other HTTP methods (POST, PUT, DELETE, PATCH, etc.) will result in 404 responses
+- **Declared:** `GET` — the one route declared for this endpoint
+- **Derived by Express:** `HEAD` returns `200` with the same headers as `GET` and no response body; `OPTIONS` returns `200` with `Allow: GET, HEAD`. Both are protocol behaviours Express derives from the single `GET` declaration, not additional endpoints
+- **Not Routed:** `POST`, `PUT`, `DELETE` and `PATCH` return `404 Not Found`
 
 ### Request Parameters
 This endpoint does not require any parameters, headers, or request body:
@@ -70,7 +71,7 @@ Keep-Alive: timeout=5
 ## Error Responses
 
 ### Method Not Allowed
-- **Scenario:** When using HTTP methods other than GET (POST, PUT, DELETE, etc.)
+- **Scenario:** When using `POST`, `PUT`, `DELETE` or `PATCH` on `/hello` (`HEAD` and `OPTIONS` are served successfully and do not produce this response)
 - **Status Code:** `404 Not Found`
 - **Reason:** Express.js default behavior for unmatched route/method combinations
 - **Content-Type:** `text/html; charset=utf-8`
@@ -137,8 +138,8 @@ The browser will display the plain text response "Hello world" directly on the p
 ## Technical Implementation
 
 ### Framework Details
-- **Express Version:** 5.1.0 (latest stable with enhanced promise support)
-- **Node.js Version:** v22.16.0 LTS (Active LTS until October 2025)
+- **Express Version:** 5.1.0 (enhanced promise support)
+- **Node.js Version:** v22.16.0 LTS
 - **Routing Pattern:** Express Router with modular organization
 - **Response Method:** `res.send()` with automatic Content-Type detection
 
@@ -153,7 +154,7 @@ router.get('/', (req, res) => {
 ### Requirements Compliance
 - **F-002-RQ-001:** ✅ Route definition for `/hello` path with GET method support
 - **F-002-RQ-002:** ✅ Returns exact text "Hello world"
-- **F-002-RQ-003:** ✅ Supports only GET HTTP method
+- **F-002-RQ-003:** ✅ Declares only the GET HTTP method — `POST`, `PUT`, `DELETE` and `PATCH` return `404`, while Express derives `HEAD` and `OPTIONS` from the same declaration, so both return `200`
 - **F-002-RQ-004:** ✅ Includes appropriate Content-Type header (`text/html; charset=utf-8`)
 
 ---
@@ -184,7 +185,7 @@ This endpoint demonstrates:
 - Verify 200 status code response
 - Confirm exact "Hello world" response text
 - Validate Content-Type header setting
-- Test GET method exclusive support
+- Test the method matrix: GET, HEAD and OPTIONS return 200; POST, PUT, DELETE and PATCH return 404
 
 ### Performance Testing
 - Response time should be under 100ms
@@ -216,7 +217,7 @@ This endpoint demonstrates:
 |-------|---------|----------|
 | Server not running | Connection refused | Start server with `npm start` |
 | Wrong port | 404 or connection error | Verify server running on port 3000 |
-| Method error | 404 response | Ensure using GET method only |
+| Method error | 404 response | Use GET (HEAD and OPTIONS also succeed); POST, PUT, DELETE and PATCH are not routed |
 | Network issues | Timeout | Check localhost connectivity |
 
 ### Validation Commands
