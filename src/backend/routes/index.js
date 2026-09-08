@@ -1,4 +1,4 @@
-// Express.js v5.1.0 - Latest stable release with enhanced promise support and automatic error handling
+// Express.js v5.1.0 - Pinned release with enhanced promise support and automatic error handling
 const express = require('express');
 
 // Internal route modules - Import individual route handlers for modular architecture
@@ -87,7 +87,12 @@ const router = express.Router();
  * 
  * Requirements Fulfillment:
  * - F-002-RQ-001: Defines route handling for /hello path through router mounting
- * - F-003-RQ-002: Implements exact path matching for '/hello' requests
+ * - F-003-RQ-002: Matches the '/hello' path prefix and delegates to helloRouter.
+ *   Matching follows the Express router defaults recorded in the Router Configuration
+ *   notes above: it is case-insensitive and non-strict, so GET /HELLO and GET /hello/
+ *   reach this router just as GET /hello does. Exact, case-sensitive matching is
+ *   deliberately not implemented — express.Router() is constructed without the
+ *   caseSensitive or strict options, and those defaults stand.
  * - Modular Architecture: Separates hello endpoint logic from main routing concerns
  * 
  * Error Handling:
