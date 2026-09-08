@@ -10,18 +10,19 @@ const { logger } = require('../../utils/logger');
 /**
  * Error Handler Middleware Unit Tests
  *
- * errorHandler is the application's terminal middleware: Express routes to it only
- * when it is registered after every router, and it deliberately does not call
- * next(), because it ends the request-response cycle by sending the response.
+ * errorHandler is the application's terminal middleware: Express routes to it
+ * only when it is registered after every router, and it deliberately does not
+ * call next(), because it ends the request-response cycle by sending the
+ * response.
  *
- * The handler is invoked directly here. That is deliberate rather than a shortcut:
- * no route in the application throws or calls next(err), so there is no HTTP request
- * that would reach it, and adding a throwing route purely to test it would add an
- * endpoint the application is not meant to have. These tests are therefore the only
- * executable evidence for this module's behaviour.
+ * The handler is invoked directly here. That is deliberate rather than a
+ * shortcut: no route in the application throws or calls next(err), so there is
+ * no HTTP request that would reach it, and adding a throwing route purely to
+ * test it would add an endpoint the application is not meant to have. These
+ * tests are therefore the only executable evidence for this module's behaviour.
  *
- * Fixture note: the handler reads req.get('User-Agent') on every invocation, so the
- * request stand-in MUST provide `get`. Omitting it throws
+ * Fixture note: the handler reads req.get('User-Agent') on every invocation,
+ * so the request stand-in MUST provide `get`. Omitting it throws
  * "TypeError: req.get is not a function" from inside the handler, before any
  * response assertion runs - a failure that looks like a handler bug but is not.
  *
@@ -76,16 +77,21 @@ describe('errorHandler middleware', () => {
     expect(res.status).toHaveBeenCalledTimes(1);
     expect(res.status).toHaveBeenCalledWith(500);
 
-    // The envelope is generic on purpose - it must not leak err.message or the stack
+    // The envelope is generic on purpose - it must not leak err.message or
+    // the stack. Matching the whole object rather than a subset is what makes
+    // this assert "exactly these four fields": a fifth would fail here.
+    // The timestamp is pinned to the shape new Date().toISOString() produces
+    // rather than to any string, so a malformed value cannot slip through.
     expect(res.json).toHaveBeenCalledTimes(1);
     const payload = res.json.mock.calls[0][0];
     expect(payload).toEqual({
       error: 'Internal Server Error',
       status: 500,
-      timestamp: expect.any(String),
+      timestamp: expect.stringMatching(
+        /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
+      ),
       path: '/hello'
     });
-    expect(new Date(payload.timestamp).toString()).not.toBe('Invalid Date');
     expect(JSON.stringify(payload)).not.toContain('Something went wrong');
 
     // The full detail goes to the log instead, where it is safe to expose
@@ -114,8 +120,10 @@ describe('errorHandler middleware', () => {
     expect(res.json).toHaveBeenCalledTimes(1);
   });
 
-  it('should fall back to req.url and connection.remoteAddress when originalUrl and ip are absent', () => {
-    // Exercises the right-hand side of both fallback expressions
+  it('should fall back to req.url and connection.remoteAddress', () => {
+    // Exercises the right-hand side of every fallback expression: no
+    // originalUrl and no ip, so req.url and connection.remoteAddress are the
+    // only values the handler can reach.
     const req = {
       method: 'POST',
       url: '/raw-path',
@@ -123,25 +131,34 @@ describe('errorHandler middleware', () => {
       params: {},
       query: {},
       connection: { remoteAddress: '192.168.1.50' },
-      get: jest.fn(() => undefined)
+      get: jest.fn(() => 'fallback-test-agent')
     };
 
     errorHandler(new Error('fallback path'), req, res, next);
 
     expect(res.status).toHaveBeenCalledWith(500);
+
+    // path uses the same originalUrl || url expression as the log record, so
+    // the fallback has to surface in the client response too
     expect(res.json).toHaveBeenCalledWith(
-      expect.objectContaining({ error: 'Internal Server Error', path: '/raw-path' })
+      expect.objectContaining({
+        error: 'Internal Server Error',
+        path: '/raw-path'
+      })
     );
 
-    // The logged record must carry the fallback values, not undefined
+    // The logged record must carry the fallback values themselves, not merely
+    // prove that a 500 came back. userAgent is asserted against the string the
+    // req.get stand-in returns, which is what shows the handler consumed it.
     expect(errorSpy).toHaveBeenCalledWith(
       'Unhandled application error occurred:',
       expect.objectContaining({
         requestUrl: '/raw-path',
         clientIP: '192.168.1.50',
-        userAgent: undefined
+        userAgent: 'fallback-test-agent'
       })
     );
+    expect(req.get).toHaveBeenCalledWith('User-Agent');
     expect(next).not.toHaveBeenCalled();
   });
 });

@@ -11,18 +11,20 @@ const { logger } = require('../../utils/logger');
 /**
  * Request Logger Middleware Unit Tests
  *
- * These are function-level unit tests: the middleware is invoked directly with
- * plain request/response objects and a jest.fn() for next(), with no HTTP driver.
- * requestLogger reads only req.method, req.originalUrl and req.body and never
- * touches the response, so Supertest would add nothing but indirection here.
+ * These are function-level unit tests: the middleware is invoked directly
+ * with plain request/response objects and a jest.fn() for next(), with no
+ * HTTP driver. requestLogger reads only req.method, req.originalUrl and
+ * req.body and never touches the response, so Supertest would add nothing
+ * but indirection here.
  *
- * The suite asserts the value the logger actually received - not merely that the
- * middleware ran - because the whole point of this module is the record it emits.
- * All four body-handling paths are covered:
- *   1. object body      -> serialised with JSON.stringify
- *   2. primitive body   -> coerced with String()
- *   3. absent body      -> rendered as '{}' (both undefined and null)
- *   4. circular body    -> '[Object - Unable to serialize]' plus a logger.error call
+ * The suite asserts the value the logger actually received - not merely
+ * that the middleware ran - because the whole point of this module is the
+ * record it emits. All four body-handling paths are covered:
+ *   1. object body     -> serialised with JSON.stringify
+ *   2. primitive body  -> coerced with String()
+ *   3. absent body     -> rendered as '{}' (both undefined and null)
+ *   4. circular body   -> '[Object - Unable to serialize]' plus a
+ *                        logger.error call
  *
  * Requirements Addressed:
  * - F-003: Request Processing (per-request observability)
@@ -34,7 +36,7 @@ describe('requestLogger middleware', () => {
   let next;
 
   beforeEach(() => {
-    // Silence the real console writes while capturing the arguments they receive
+    // Silence the real console writes while capturing their arguments
     infoSpy = jest.spyOn(logger, 'info').mockImplementation(() => {});
     errorSpy = jest.spyOn(logger, 'error').mockImplementation(() => {});
     next = jest.fn();
@@ -56,7 +58,10 @@ describe('requestLogger middleware', () => {
   });
 
   it('should log an object body serialized as JSON and call next()', () => {
-    const req = buildRequest('POST', '/hello', { name: 'John', nested: { id: 7 } });
+    const req = buildRequest('POST', '/hello', {
+      name: 'John',
+      nested: { id: 7 }
+    });
 
     requestLogger(req, {}, next);
 
@@ -79,6 +84,8 @@ describe('requestLogger middleware', () => {
 
     requestLogger(req, {}, next);
 
+    // Exactly one record per request - a duplicate write is a defect too
+    expect(infoSpy).toHaveBeenCalledTimes(1);
     expect(infoSpy).toHaveBeenCalledWith(
       'HTTP Request -',
       'Method:',
@@ -88,6 +95,7 @@ describe('requestLogger middleware', () => {
       'Body:',
       '42'
     );
+    expect(errorSpy).not.toHaveBeenCalled();
     expect(next).toHaveBeenCalledTimes(1);
   });
 
@@ -98,6 +106,8 @@ describe('requestLogger middleware', () => {
     // null body - the second half of the guard's short-circuit
     requestLogger(buildRequest('HEAD', '/hello', null), {}, next);
 
+    // One record per invocation, and both must render the body as '{}'
+    expect(infoSpy).toHaveBeenCalledTimes(2);
     expect(infoSpy).toHaveBeenNthCalledWith(
       1,
       'HTTP Request -',
@@ -118,17 +128,20 @@ describe('requestLogger middleware', () => {
       'Body:',
       '{}'
     );
+    expect(errorSpy).not.toHaveBeenCalled();
     expect(next).toHaveBeenCalledTimes(2);
   });
 
-  it('should report an unserializable body without throwing and still call next()', () => {
-    // A circular reference makes JSON.stringify throw, exercising the catch branch
+  it('should report an unserializable body and still call next()', () => {
+    // A circular reference makes JSON.stringify throw, reaching the catch
     const circular = { label: 'circular' };
     circular.self = circular;
     const req = buildRequest('POST', '/hello', circular);
 
     expect(() => requestLogger(req, {}, next)).not.toThrow();
 
+    // The fallback marker is logged in place of the unserializable body
+    expect(infoSpy).toHaveBeenCalledTimes(1);
     expect(infoSpy).toHaveBeenCalledWith(
       'HTTP Request -',
       'Method:',
