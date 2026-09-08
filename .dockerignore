@@ -1,0 +1,95 @@
+# =============================================================================
+# Docker Build Context Exclusions - Repository Root
+# =============================================================================
+# Docker loads the ignore file from the BUILD CONTEXT ROOT only, as
+# <context>/.dockerignore, and from nowhere else. Both build paths in this
+# repository set the context to the repository root:
+#
+#   .github/workflows/cd.yml            context: .       -> repository root
+#   infrastructure/docker/docker-compose.yml
+#                                       context: ../..   -> repository root
+#
+# So this file is what actually filters every build here. The older
+# infrastructure/docker/.dockerignore sits BELOW both context roots, is never
+# loaded by any build path, and is kept only as a record of intent.
+#
+# HOW THESE PATTERNS MATCH: paths are matched RELATIVE TO THE CONTEXT ROOT,
+# which is the repository root - not relative to the Dockerfile's directory.
+# A bare pattern such as `node_modules/` therefore matches only a top-level
+# directory and would NOT match src/backend/node_modules. Everything this file
+# needs to exclude lives one or two levels down, which is why the recursive
+# `**/` form below is required rather than optional.
+#
+# DELIBERATELY NOT EXCLUDED, because the build reads them from the context:
+#   src/backend/package.json, src/backend/package-lock.json  (dependency install)
+#   src/backend/{server,app}.js and config/ middleware/ routes/ utils/  (sources)
+#
+# The Dockerfile named with `-f` and this ignore file are always sent to the
+# daemon regardless of the rules below, so excluding infrastructure/ is safe.
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Dependency directories
+# -----------------------------------------------------------------------------
+# This is the most important exclusion in the file. The runtime stage installs
+# production-only dependencies with `npm ci --omit=dev` and then copies the
+# application sources on top of that install. If a developer's local
+# src/backend/node_modules reached the build context, it would travel into the
+# builder stage and that copy would overwrite the production tree with a
+# development one - a larger image carrying test and tooling packages it must
+# never ship. The recursive form is what prevents it at the source.
+**/node_modules
+
+# -----------------------------------------------------------------------------
+# Test coverage output and log files
+# -----------------------------------------------------------------------------
+# Generated locally by `npm test` (coverage is collected on every run) and by
+# the running process. Build output, never build input.
+**/coverage
+**/*.log
+
+# -----------------------------------------------------------------------------
+# Development tooling configuration
+# -----------------------------------------------------------------------------
+# Test runner, file watcher and code-style configuration are development-only.
+# The production image runs `npm start` and reads none of them, so shipping
+# them would only widen the image and its attack surface.
+**/jest.config.js
+**/nodemon.json
+**/.eslintrc.js
+**/.prettierrc
+
+# -----------------------------------------------------------------------------
+# Environment files
+# -----------------------------------------------------------------------------
+# Local configuration must never be baked into an image; the container is
+# configured through environment variables at run time instead.
+# `**/.env` matches the literal filename `.env` and does NOT match
+# `.env.example`, so the template needs its own pattern. It is excluded because
+# the running image never reads it - src/backend/config/index.js loads `.env`
+# via dotenv, and the template is a learner artifact with no runtime role.
+**/.env
+**/.env.example
+
+# -----------------------------------------------------------------------------
+# Tests
+# -----------------------------------------------------------------------------
+# The suites run locally and in CI against the source tree, not inside the
+# production image. Path-qualified because this is the only tests directory.
+src/backend/tests
+
+# -----------------------------------------------------------------------------
+# Version control
+# -----------------------------------------------------------------------------
+# Repository history is large, changes on every commit (needlessly
+# invalidating build cache) and has no runtime purpose.
+.git
+
+# -----------------------------------------------------------------------------
+# Documentation and infrastructure definitions
+# -----------------------------------------------------------------------------
+# Tutorial documentation and the container, Compose and Kubernetes definitions
+# describe how to build and deploy the application; the application itself does
+# not read them.
+docs/
+infrastructure/

@@ -184,8 +184,8 @@ install_dependencies() {
     fi
     
     # Execute npm install command to download and install dependencies
-    # Installs production dependencies: express ^5.1.0, dotenv ^16.3.1
-    # Installs development dependencies: nodemon ^3.0.0, supertest 7.1.1
+    # Installs production dependencies: express 5.1.0, dotenv ^16.3.1
+    # Installs development dependencies: nodemon ^3.0.0, supertest 7.1.1, jest ^29.7.0
     log_info "Executing: npm install"
     log_info "This may take several minutes depending on network speed..."
     

@@ -1,4 +1,4 @@
-// Express.js v5.1.0 - Latest stable release with enhanced promise support and automatic error handling
+// Express.js v5.1.0 - Pinned release with enhanced promise support and automatic error handling
 const express = require('express');
 
 /**
@@ -25,13 +25,20 @@ const router = express.Router();
  * Requirements Implementation:
  * - F-002-RQ-001: Defines the route handler for the /hello path
  * - F-002-RQ-002: Returns the exact text "Hello world"
- * - F-002-RQ-003: Supports only the GET HTTP method
+ * - F-002-RQ-003: Declares only the GET HTTP method (see router.get below).
+ *   Express derives two further methods from that single GET declaration:
+ *   HEAD /hello returns 200 with headers only, as HTTP semantics require, and
+ *   OPTIONS /hello returns 200 with an "Allow: GET, HEAD" header. POST, PUT and
+ *   DELETE match no route and are answered by Express's default handler with 404.
+ *   The derived HEAD behaviour is depended upon rather than incidental: the
+ *   container health check probes this path with "wget --spider", which issues a
+ *   HEAD request, so HEAD must not be suppressed (infrastructure/docker/Dockerfile).
  * - F-004-RQ-003: Sends the "Hello world" text in the response body
  * 
  * Technical Specifications:
  * - Response Time Target: < 100ms (F-002 performance criteria)
  * - HTTP Status: 200 (implicit success status)
- * - Content-Type: text/plain (automatically set by Express res.send())
+ * - Content-Type: text/html; charset=utf-8 (automatically set by Express res.send())
  * - Response Body: "Hello world" (exact text as specified)
  * 
  * @route GET /
@@ -118,6 +125,6 @@ module.exports = router;
  * Production Readiness:
  * - Follows Express.js best practices
  * - Implements proper error handling patterns
- * - Uses latest stable dependencies with security improvements
+ * - Uses pinned dependency versions with security improvements
  * - Includes comprehensive documentation for maintainability
  */
