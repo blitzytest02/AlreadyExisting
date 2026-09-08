@@ -1,47 +1,44 @@
-// Error Handler Middleware Unit Test Suite
-// Jest Testing Framework - Version: 29.7.0
-
 // Module under test - NAMED export, a four-arity Express error middleware
 const { errorHandler } = require('../../middleware/errorHandler');
 
-// The shared logger object the middleware captured at load time
+// The same logger object the middleware captured at load time: Node keys the
+// module cache by resolved path, so a spy installed here is observed inside
+// the handler. Spying at this level rather than on console also keeps the
+// assertions independent of the '[ERROR]:' prefix logger.js adds in
+// development.
 const { logger } = require('../../utils/logger');
-
-// The application configuration, whose nodeEnv decides whether the handler may
-// write a stack trace. It is a plain object, so a case can set it and put it
-// back afterwards.
-const config = require('../../config');
 
 /**
  * Error Handler Middleware Unit Tests
  *
- * errorHandler is the application's terminal middleware: Express routes to it
- * only when it is registered after every router, and it ends the
- * request-response cycle by sending the response instead of calling next().
- * The one exception is a response that has already started, where Express
- * requires delegation to its own default handler - covered below.
+ * errorHandler is the application's terminal middleware. Express routes to a
+ * four-argument handler only when it is registered after every router, and
+ * this one ends the request-response cycle by sending the response: it never
+ * calls next() and never inspects res.headersSent.
  *
- * The handler is invoked directly here. That is deliberate rather than a
- * shortcut: no route in the application throws or calls next(err), so there is
- * no HTTP request that would reach it, and adding a throwing route purely to
- * test it would add an endpoint the application is not meant to have. These
- * tests are therefore the only executable evidence for this module's behaviour.
+ * The handler is invoked directly here. No route in the application throws or
+ * calls next(err), so no HTTP request reaches it, and adding a throwing route
+ * to reach one would introduce an endpoint the application is not meant to
+ * have. These cases are therefore the only executable evidence for this
+ * module's behaviour.
  *
- * Two contracts are asserted. The client response is generic: four fields, no
- * error message, no stack, and a path with the query string dropped. The log
- * record is complete in shape - all eleven fields, every one asserted - and
- * minimized in content: nothing the caller supplied appears in it, neither
- * values nor NAMES, so the fixtures plant a marker string in the query, in a
- * plausible-looking custom header, in the User-Agent and in the client address
- * and assert that marker reaches none of the logger's arguments. What remains
- * is operator-facing diagnostic material, which is not safe by virtue of
- * sitting in a log: whoever runs this application still has to control access
- * to it and bound its retention.
+ * The two contracts asserted differ in kind, deliberately. The client response
+ * is generic - four fields, no error message and no stack. The log record is
+ * the opposite: it carries the stack, the request target as received, every
+ * request header, the route parameters and query, the User-Agent and the
+ * client address, none of them redacted, filtered or transformed. The record
+ * assertion below matches the whole context object precisely so that this
+ * residual exposure is visible in the suite rather than implied by it; no
+ * fixture plants a secret, because nothing here would remove one.
  *
- * Fixture note: the handler reads req.get('User-Agent') on every invocation,
- * so the request stand-in MUST provide `get`. Omitting it throws
+ * Fixture notes. The handler calls req.get('User-Agent') on every invocation,
+ * so the request stand-in MUST provide get - omitting it throws
  * "TypeError: req.get is not a function" from inside the handler, before any
- * response assertion runs - a failure that looks like a handler bug but is not.
+ * response assertion runs, and the failure then looks like a handler defect
+ * rather than a fixture one. The client-address fallback reads
+ * req.connection.remoteAddress, Node's deprecated alias for req.socket, so the
+ * fixtures supply connection: they mirror the module under test rather than
+ * the modern spelling it does not use.
  *
  * Requirements Addressed:
  * - F-001-RQ-004: Graceful error handling
@@ -53,16 +50,17 @@ describe('errorHandler middleware', () => {
   let next;
 
   // The shape new Date().toISOString() produces, so a malformed timestamp
-  // cannot slip through where any string would
+  // cannot pass where any string would
   const ISO_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 
-  // Planted wherever the request can carry caller-supplied text
-  const SECRET = 'PLANTED-SECRET-VALUE';
-
   beforeEach(() => {
+    // clearMocks in jest.config.js clears call history but leaves a spy's
+    // replacement implementation installed, so each case installs its own and
+    // afterEach restores it
     errorSpy = jest.spyOn(logger, 'error').mockImplementation(() => {});
 
-    // status() must be chainable in Express; json() terminates the response
+    // status() and json() are separate statements in the handler rather than a
+    // chain, but returning res keeps the mocks usable either way
     res = {
       status: jest.fn(() => res),
       json: jest.fn(() => res)
@@ -72,226 +70,113 @@ describe('errorHandler middleware', () => {
   });
 
   afterEach(() => {
-    // clearMocks in jest.config.js clears call history but leaves the spy's
-    // replacement implementation installed, so restoring is not redundant
     jest.restoreAllMocks();
   });
 
   /**
-   * Fully-populated request stand-in: originalUrl and ip are present, so the
-   * left-hand side of each of the handler's fallback expressions is taken.
-   * The query string, the route parameter, the custom headers, the User-Agent
-   * and the client address all carry material the record must not reproduce.
+   * Fully-populated request: originalUrl and ip are both present, so each of
+   * the handler's three fallback expressions takes its left-hand side.
    */
   const buildRequest = () => ({
     method: 'GET',
-    originalUrl: `/hello?token=${SECRET}&${SECRET}=1`,
-    url: '/hello-raw',
-    headers: {
-      host: 'localhost:3000',
-      'content-type': 'application/json',
-      authorization: `Bearer ${SECRET}`,
-      'x-auth': SECRET,
-      [`x-${SECRET}`]: 'anything'
-    },
-    params: { id: '42' },
-    query: { token: SECRET, [SECRET]: '1' },
+    originalUrl: '/hello?page=2',
+    url: '/hello',
+    headers: { host: 'localhost:3000', 'content-type': 'application/json' },
+    params: {},
+    query: { page: '2' },
     ip: '203.0.113.7',
-    connection: { remoteAddress: '10.0.0.1' },
-    get: jest.fn(() => `agent-${SECRET}`)
+    connection: { remoteAddress: '198.51.100.4' },
+    get: jest.fn(() => 'jest-runner/1.0')
   });
 
-  /** Everything the logger was handed, rendered for absence assertions */
-  const everythingLogged = () =>
-    errorSpy.mock.calls
-      .map((call) => call.map((argument) => JSON.stringify(argument)).join(' '))
-      .join(' | ');
-
-  it('should respond 500 with the generic error envelope', () => {
+  it('should respond 500 and log the request context as received', () => {
     const req = buildRequest();
-    const err = new Error('Something went wrong');
 
-    errorHandler(err, req, res, next);
+    errorHandler(new Error('Something went wrong'), req, res, next);
 
     // Status is set before the body is sent
     expect(res.status).toHaveBeenCalledTimes(1);
     expect(res.status).toHaveBeenCalledWith(500);
 
-    // The envelope is generic on purpose - it must not leak err.message or
-    // the stack. Matching the whole object rather than a subset is what makes
-    // this assert "exactly these four fields": a fifth would fail here.
+    // Matching the whole object rather than a subset is what makes this assert
+    // "exactly these four fields": a fifth would fail here
     expect(res.json).toHaveBeenCalledTimes(1);
-    const payload = res.json.mock.calls[0][0];
-    expect(payload).toEqual({
+    expect(res.json).toHaveBeenCalledWith({
       error: 'Internal Server Error',
       status: 500,
       timestamp: expect.stringMatching(ISO_TIMESTAMP),
-      path: '/hello?[REDACTED]'
-    });
-    expect(JSON.stringify(payload)).not.toContain('Something went wrong');
-
-    // The path is reflected back to the caller, so nothing the caller put in
-    // the URL - value or parameter name - may survive in it
-    expect(JSON.stringify(payload)).not.toContain(SECRET);
-  });
-
-  it('should log the complete context with nothing the caller supplied', () => {
-    const req = buildRequest();
-    const err = new Error('Something went wrong');
-
-    errorHandler(err, req, res, next);
-
-    // Every one of the eleven fields is asserted, and the whole object is
-    // matched rather than a subset, so removing, renaming or corrupting any
-    // field fails here - this suite is the only executable check on the record
-    expect(errorSpy).toHaveBeenCalledTimes(1);
-    const [logMessage, context] = errorSpy.mock.calls[0];
-    expect(logMessage).toBe('Unhandled application error occurred:');
-    expect(context).toStrictEqual({
-      errorMessage: 'Something went wrong',
-      errorStack: expect.any(String),
-      errorName: 'Error',
-      requestUrl: '/hello?[REDACTED]',
-      requestMethod: 'GET',
-      // Allowlisted protocol metadata survives with its value; the three
-      // other headers are dropped whole, name included, and counted
-      requestHeaders: {
-        host: 'localhost:3000',
-        'content-type': 'application/json',
-        '[redacted]': 3
-      },
-      requestParams: { '[redacted]': 1 },
-      requestQuery: { '[redacted]': 2 },
-      timestamp: expect.stringMatching(ISO_TIMESTAMP),
-      userAgent: '[REDACTED]',
-      clientIP: '203.0.113.[REDACTED]'
+      path: '/hello?page=2'
     });
 
-    // The planted marker arrived in the query values, a query name, a header
-    // value, a header name, the User-Agent and nowhere may it reappear
-    expect(everythingLogged()).not.toContain(SECRET);
-    expect(everythingLogged()).not.toContain('203.0.113.7');
-    expect(req.get).toHaveBeenCalledWith('User-Agent');
-  });
+    // The message and the stack stay server-side, in the record below
+    expect(JSON.stringify(res.json.mock.calls[0][0])).not.toContain(
+      'Something went wrong'
+    );
 
-  it('should withhold the stack trace in production', () => {
-    // The stack exposes absolute filesystem paths and internal structure, so
-    // it is written while developing and withheld once the same log may be
-    // shipped off the host. The key stays present either way.
-    const originalNodeEnv = config.nodeEnv;
-    config.nodeEnv = 'production';
-
-    try {
-      errorHandler(new Error('production failure'), buildRequest(), res, next);
-    } finally {
-      config.nodeEnv = originalNodeEnv;
-    }
-
-    const [, context] = errorSpy.mock.calls[0];
-    expect(context.errorStack).toBe('[REDACTED]');
-    expect(context.errorMessage).toBe('production failure');
-    expect(everythingLogged()).not.toContain('errorHandler.js');
-  });
-
-  it('should terminate the middleware chain without calling next()', () => {
-    errorHandler(new Error('terminal'), buildRequest(), res, next);
-
-    // Calling next() after a response has been sent would hand control to
-    // middleware that can no longer write, so the handler must not do it
-    expect(next).not.toHaveBeenCalled();
-    expect(res.json).toHaveBeenCalledTimes(1);
-  });
-
-  it('should delegate to the default handler once headers are sent', () => {
-    // Express's contract for an error raised after the response has started:
-    // the handler cannot set a status or send a body, and must hand the
-    // request to the framework's own handler, which closes the connection.
-    // Writing anyway raises ERR_HTTP_HEADERS_SENT and loses the real error.
-    const err = new Error('failed mid-response');
-    const req = {
-      method: 'GET',
-      originalUrl: '/hello?',
-      headers: null,
-      params: {},
-      query: {},
-      connection: {},
-      get: jest.fn(() => undefined)
-    };
-    res.headersSent = true;
-
-    errorHandler(err, req, res, next);
-
-    // The original error is passed on, not swallowed or replaced
-    expect(next).toHaveBeenCalledTimes(1);
-    expect(next).toHaveBeenCalledWith(err);
-
-    // No second write is attempted against the started response
-    expect(res.status).not.toHaveBeenCalled();
-    expect(res.json).not.toHaveBeenCalled();
-
-    // The error is still recorded before the handoff. A bare '?' leaves the
-    // pathname alone; headers Express never populated and a request with no
-    // address at all render as fixed values rather than as 'undefined'; and a
-    // missing User-Agent is recorded as absent rather than as redacted.
+    // Two arguments: a fixed prefix and one context object. All eleven of its
+    // fields are matched, so a removed, renamed or newly added field fails
+    // here - which is also what documents the record's exact contents. Note
+    // requestHeaders: the headers object is recorded whole, so every header
+    // the caller sent is in the log, and requestUrl carries the query string.
     expect(errorSpy).toHaveBeenCalledTimes(1);
     expect(errorSpy).toHaveBeenCalledWith(
       'Unhandled application error occurred:',
-      expect.objectContaining({
-        errorMessage: 'failed mid-response',
-        requestUrl: '/hello',
-        requestHeaders: {},
-        requestParams: {},
-        requestQuery: {},
-        userAgent: '[absent]',
-        clientIP: '[REDACTED]'
-      })
+      {
+        errorMessage: 'Something went wrong',
+        errorStack: expect.any(String),
+        errorName: 'Error',
+        requestUrl: '/hello?page=2',
+        requestMethod: 'GET',
+        requestHeaders: req.headers,
+        requestParams: req.params,
+        requestQuery: req.query,
+        timestamp: expect.stringMatching(ISO_TIMESTAMP),
+        userAgent: 'jest-runner/1.0',
+        clientIP: '203.0.113.7'
+      }
     );
+
+    // Proves the mandatory fixture member was actually consumed
+    expect(req.get).toHaveBeenCalledWith('User-Agent');
   });
 
-  it('should fall back to req.url and connection.remoteAddress', () => {
-    // Exercises the right-hand side of every fallback expression: no
-    // originalUrl and no ip, so req.url and connection.remoteAddress are the
-    // only values the handler can reach. An IPv6 address keeps its first two
-    // groups, which also masks the embedded address of an IPv4-mapped form.
+  it('should terminate the chain without calling next()', () => {
+    errorHandler(new Error('Something went wrong'), buildRequest(), res, next);
+
+    // The handler ends the cycle by responding. Calling next() afterwards
+    // would hand a completed response to middleware that can no longer write
+    // to it, which is why the module omits the call deliberately.
+    expect(res.json).toHaveBeenCalledTimes(1);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('should fall back to req.url and the connection address', () => {
+    // Neither originalUrl nor ip is present, so all three fallback
+    // expressions take their right-hand side
     const req = {
       method: 'POST',
-      url: '/raw-path',
-      headers: undefined,
-      params: null,
-      query: { one: '1' },
-      connection: { remoteAddress: `::ffff:192.168.1.50` },
-      get: jest.fn(() => 'fallback-test-agent')
+      url: '/fallback-path',
+      headers: {},
+      params: { id: '42' },
+      query: {},
+      connection: { remoteAddress: '198.51.100.4' },
+      get: jest.fn(() => 'jest-runner/1.0')
     };
 
-    errorHandler(new Error('fallback path'), req, res, next);
+    errorHandler(new Error('boom'), req, res, next);
 
-    expect(res.status).toHaveBeenCalledWith(500);
-
-    // path uses the same originalUrl || url expression as the log record, so
-    // the fallback has to surface in the client response too
-    expect(res.json).toHaveBeenCalledWith(
-      expect.objectContaining({
-        error: 'Internal Server Error',
-        path: '/raw-path'
-      })
-    );
-
-    // The logged record must carry the fallback values themselves, not merely
-    // prove that a 500 came back
     expect(errorSpy).toHaveBeenCalledWith(
       'Unhandled application error occurred:',
       expect.objectContaining({
-        requestUrl: '/raw-path',
-        requestHeaders: {},
-        requestParams: {},
-        requestQuery: { '[redacted]': 1 },
-        userAgent: '[REDACTED]',
-        clientIP: '::[REDACTED]'
+        requestUrl: '/fallback-path',
+        clientIP: '198.51.100.4'
       })
     );
-    expect(everythingLogged()).not.toContain('192.168.1.50');
-    expect(everythingLogged()).not.toContain('fallback-test-agent');
-    expect(req.get).toHaveBeenCalledWith('User-Agent');
-    expect(next).not.toHaveBeenCalled();
+
+    // The envelope's path is the same req.originalUrl || req.url expression,
+    // so the fallback has to surface there too
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ path: '/fallback-path' })
+    );
   });
 });

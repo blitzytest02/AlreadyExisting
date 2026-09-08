@@ -1,145 +1,30 @@
-# =============================================================================
-# Docker Build Context Exclusions - Repository Root
-# =============================================================================
-# Docker looks for an ignore file in TWO places, and the first one it finds
-# wins outright. A file named after the Dockerfile passed to `-f` - that is
-# <dockerfile-path>.dockerignore, which here would be
-# infrastructure/docker/Dockerfile.dockerignore - takes PRECEDENCE. Only when
-# no such file exists does Docker fall back to <context>/.dockerignore, which
-# is this file. Precedence means REPLACEMENT rather than merge: adding a
-# Dockerfile-specific ignore file would switch off every rule below at once,
-# and no build would report that it had happened. None exists in this
-# repository, which is why this file is the one in force - and why none may
-# ever be created beside infrastructure/docker/Dockerfile.
-#
-# Both build paths in this repository set the context to the repository root:
-#
-#   .github/workflows/cd.yml            context: .       -> repository root
-#   infrastructure/docker/docker-compose.yml
-#                                       context: ../..   -> repository root
-#
-# So this file is what actually filters every build here. The older
-# infrastructure/docker/.dockerignore sits BELOW both context roots, is never
-# loaded by any build path, and is kept only as a record of intent.
-#
-# HOW THESE PATTERNS MATCH: paths are matched RELATIVE TO THE CONTEXT ROOT,
-# which is the repository root - not relative to the Dockerfile's directory.
-# A bare pattern such as `node_modules/` therefore matches only a top-level
-# directory and would NOT match src/backend/node_modules. The backend artifacts
-# excluded below - dependencies, coverage output, the development tooling
-# configuration and the environment files - all live one or two levels down
-# inside src/backend/, so for those the recursive `**/` form is required rather
-# than optional. The entries that sit AT the context root (.git, docs/ and
-# infrastructure/) are deliberately written bare, because a bare pattern is
-# exactly what matches a top-level path; and src/backend/tests is spelled out
-# in full because it is the only tests directory in the repository.
-#
-# DELIBERATELY NOT EXCLUDED, because the build reads them from the context:
-#   src/backend/package.json, src/backend/package-lock.json  (dependency install)
-#   src/backend/{server,app}.js and config/ middleware/ routes/ utils/  (sources)
-#
-# The Dockerfile named with `-f` and this ignore file are always sent to the
-# daemon regardless of the rules below, so excluding infrastructure/ is safe.
-# =============================================================================
+# Docker reads the ignore file from the build CONTEXT ROOT. Both build paths set
+# that root to the repository root (cd.yml `context: .`, docker-compose.yml
+# `context: ../..`), so this file is in force and infrastructure/docker/.dockerignore
+# is never loaded. A `<dockerfile-path>.dockerignore` would REPLACE this file
+# outright, so none may be created beside infrastructure/docker/Dockerfile.
 
-# -----------------------------------------------------------------------------
-# Dependency directories
-# -----------------------------------------------------------------------------
-# This is the most important exclusion in the file. Both image stages read the
-# application sources straight from the build context - `COPY src/backend/ ./`
-# at Dockerfile:30 in the builder stage and again at Dockerfile:62 in the
-# runtime stage - so a developer's local src/backend/node_modules would not
-# travel from one stage to the other; the context copy would place it directly
-# into each of them.
-#
-# The harm is done by the runtime-stage copy. It runs AFTER
-# `npm ci --omit=dev --only=production` (Dockerfile:57) has installed the
-# production-only dependency tree into that same directory, so a copied
-# development node_modules lands on top of the production install and replaces
-# it - shipping an image that is larger and carries the test and tooling
-# packages it must never contain. The recursive form prevents that at the
-# source, by keeping the directory out of the context in the first place.
+# Patterns match relative to that root, so a bare `node_modules/` would not match
+# src/backend/node_modules: the backend artifacts need the recursive `**/` form,
+# while entries that genuinely sit at the root are written bare.
+
+# src/backend/package.json, src/backend/package-lock.json and the application
+# sources are deliberately NOT excluded; both image stages read them from the context.
+
 **/node_modules
-
-# -----------------------------------------------------------------------------
-# Test coverage output and log files
-# -----------------------------------------------------------------------------
-# `**/coverage` is generated locally by `npm test`, which collects coverage on
-# every run.
-#
-# `**/*.log` is not written by this application: src/backend/utils/logger.js
-# emits through console.log to stdout and console.error to stderr, and no
-# module under src/backend opens a file, so the running process creates no log
-# file of its own. The pattern covers the log files that collect around it
-# instead - output a developer has redirected into a file, a stream captured by
-# a process manager or container runtime, and tooling logs such as
-# npm-debug.log. Local artifacts either way, never build input.
 **/coverage
 **/*.log
 
-# -----------------------------------------------------------------------------
-# Development tooling configuration
-# -----------------------------------------------------------------------------
-# Test runner, file watcher and code-style configuration are development-only.
-# The production image runs `npm start` and reads none of them, so shipping
-# them would only widen the image and its attack surface.
 **/jest.config.js
 **/nodemon.json
 **/.eslintrc.js
 **/.prettierrc
 
-# -----------------------------------------------------------------------------
-# Environment files, registry credentials and keys
-# -----------------------------------------------------------------------------
-# Local configuration must never be baked into an image; the container is
-# configured through environment variables at run time instead. The source
-# copies (Dockerfile:30 and :62) take whatever the context holds, so anything
-# left unexcluded here is committed to an image layer and travels with it.
-#
-# Exact filenames are not enough. `**/.env` matches the literal name `.env`
-# only: it does not match `.env.example`, and it does not match the local and
-# per-environment variants either - `.env.local`, `.env.development.local`,
-# `.env.test.local`, `.env.production.local`, `.env.test`, `.env.production`.
-# `**/.env.*` covers all of them, whatever the suffix. `**/.env.example` is
-# kept as its own line even though `**/.env.*` also matches it, because
-# excluding the template is a deliberate decision rather than a side effect:
-# the running image never reads it - src/backend/config/index.js loads `.env`
-# via dotenv - and it is a learner artifact with no runtime role.
-#
-# `**/.npmrc` keeps registry credentials and auth tokens out of the context (no
-# .npmrc exists in this repository, and the image's `npm ci` needs none), and
-# the key and certificate patterns mirror the sensitive set the root .gitignore
-# already refuses to track (.gitignore:137-140). All of these are untracked
-# local files when they exist at all, which is exactly why Git's rules cannot
-# protect the build context and this file has to.
+# `**/.env` matches the literal name only, hence `**/.env.example`
 **/.env
 **/.env.example
-**/.env.*
-**/.npmrc
-**/*.pem
-**/*.key
-**/*.crt
-**/*.csr
 
-# -----------------------------------------------------------------------------
-# Tests
-# -----------------------------------------------------------------------------
-# The suites run locally and in CI against the source tree, not inside the
-# production image. Path-qualified because this is the only tests directory.
 src/backend/tests
-
-# -----------------------------------------------------------------------------
-# Version control
-# -----------------------------------------------------------------------------
-# Repository history is large, changes on every commit (needlessly
-# invalidating build cache) and has no runtime purpose.
 .git
-
-# -----------------------------------------------------------------------------
-# Documentation and infrastructure definitions
-# -----------------------------------------------------------------------------
-# Tutorial documentation and the container, Compose and Kubernetes definitions
-# describe how to build and deploy the application; the application itself does
-# not read them.
 docs/
 infrastructure/

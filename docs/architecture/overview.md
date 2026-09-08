@@ -49,7 +49,7 @@ graph TD
 
     F[Event Loop] -->|"Socket readiness and I/O events"| B
     G[Node.js Runtime] -->|"http module"| B
-    G -->|"Express 5.1.0"| App
+    G -->|"Express 5.2.1"| App
 
     style A fill:#e1f5fe
     style E fill:#c8e6c9
@@ -81,7 +81,7 @@ The HTTP Server component serves as the foundational entry point of the applicat
 
 ### 2.2. Express Application (`app.js`)
 
-The Express Application component orchestrates the web framework functionality using Express.js 5.1.0. This component provides the middleware architecture, routing capabilities, and request/response processing pipeline essential for HTTP request handling.
+The Express Application component orchestrates the web framework functionality using Express.js 5.2.1. This component provides the middleware architecture, routing capabilities, and request/response processing pipeline essential for HTTP request handling.
 
 **Core Functionality:**
 - **Middleware Stack Management**: Sequential request processing through configurable middleware pipeline
@@ -90,7 +90,7 @@ The Express Application component orchestrates the web framework functionality u
 - **Error Handling Coordination**: Automatic promise rejection handling and error middleware forwarding
 
 **Framework Integration Details:**
-Express 5.1.0 introduces significant improvements including middleware that can return rejected promises (automatically caught by the router as errors), enhanced security through ReDoS attack mitigation, and improved performance optimizations. The framework dropped support for Node.js versions before v18, ensuring compatibility with modern JavaScript features and security standards.
+Express 5.2.1 introduces significant improvements including middleware that can return rejected promises (automatically caught by the router as errors), enhanced security through ReDoS attack mitigation, and improved performance optimizations. The framework dropped support for Node.js versions before v18, ensuring compatibility with modern JavaScript features and security standards.
 
 **Architectural Patterns:**
 - **Middleware Pattern**: Sequential processing pipeline of exactly three registrations, in the order `app.js` applies them — the request logger, the aggregated router, then the terminal error handler. The pipeline observes, routes and terminates requests; it neither transforms nor validates them, because no body parser, sanitizer or validator is mounted anywhere in this application
@@ -111,7 +111,7 @@ The Hello Route Handler implements the core business logic for the `/hello` endp
 The handler follows a stateless design pattern where each request is processed independently without maintaining session state or persistent data. This approach demonstrates scalable API design principles while keeping the implementation simple for educational purposes.
 
 **Error Handling Integration:**
-The route handler integrates with Express 5.1.0's enhanced error handling system, where promise rejections are automatically forwarded to error handling middleware. This provides a robust foundation for handling both synchronous and asynchronous errors in a consistent manner.
+The route handler integrates with Express 5.2.1's enhanced error handling system, where promise rejections are automatically forwarded to error handling middleware. This provides a robust foundation for handling both synchronous and asynchronous errors in a consistent manner.
 
 ## 3. Data Flow
 
@@ -183,19 +183,20 @@ The system maintains a stateless design where no persistent data is stored betwe
 The application implements a lightweight logging strategy built on the built-in Node.js `console` methods, wrapped by a small logger utility, and request logging is implemented as middleware so that every incoming request is recorded consistently for debugging purposes. The logger writes synchronously: `logger.info` delegates directly to `console.log`, prefixing the line with `[INFO]:` only when `NODE_ENV` is `development`.
 
 **Logging Implementation:**
-- **Request Logging**: Each incoming HTTP request is logged with exactly three fields — the HTTP method, the request path, and the normalized request body, which is rendered as `{}` when no body is present
-- **Error Logging**: The error-handling middleware logs unhandled errors to the error stream with the error message, stack, and name, plus request context (URL, method, headers, route parameters, and query), an ISO timestamp, the User-Agent, and the client IP address
+- **Request Logging**: Each incoming HTTP request is logged with exactly three fields — the HTTP method; the request target exactly as the client sent it (`req.originalUrl`, query string included); and the request body, rendered as its JSON serialization for an object, as `String(body)` for a primitive, as `{}` when the body is absent, and as `[Object - Unable to serialize]` — accompanied by a second record on the error stream — when serialization fails
+- **Error Logging**: The error-handling middleware logs unhandled errors to the error stream with the error message, stack, and name, plus request context — the same request target, the request method, the complete request headers object, the route parameters and the query — an ISO timestamp, the User-Agent, and the client IP address
+- **No Redaction or Filtering**: Neither logger redacts, truncates or allow-lists anything it records. The request target and the request headers are copied exactly as received, so whatever a caller places in either reaches the log unchanged, and the error record carries the full stack trace — in development and in production alike, since `NODE_ENV` changes only the `[INFO]:`/`[ERROR]:` prefix and nothing filters records by severity. The request body is the one field that is rewritten rather than copied, and only into the four renderings above: `JSON.stringify` omits a field whose value is `undefined` or a function and calls a `toJSON` method if the body defines one, but every field name and value it does serialize is recorded. That is acceptable for a tutorial whose only endpoint reads no input, but it makes controlling access to the log — and bounding its retention — the operator's responsibility rather than the application's
 
 **Log Format Structure:**
 ```
 [INFO]: HTTP Request - Method: GET Path: /hello Body: {}
 ```
 
-Outside development the identical line is emitted without the `[INFO]: ` prefix, since the prefix is applied only when `NODE_ENV` is `development`. This is a single human-readable console line rather than a machine-structured format: it carries no JSON, no fixed field positions, and no level, status, latency, or timestamp fields. It stays easy to filter during development because the fixed `HTTP Request -` prefix and the `Method:`, `Path:`, and `Body:` labels are greppable.
+Outside development the identical line is emitted without the `[INFO]: ` prefix, since the prefix is applied only when `NODE_ENV` is `development`. This is a single human-readable console line rather than a machine-structured format: the record itself is not JSON-encoded — only a serialized object body appears as JSON, inside the `Body:` field — and it has no fixed field positions and no level, status, latency, or timestamp fields. It stays easy to filter during development because the fixed `HTTP Request -` prefix and the `Method:`, `Path:`, and `Body:` labels are greppable.
 
 ### 4.2. Error Handling
 
-The application handles errors on two distinct paths, and they do not share a response format. An error raised inside a route handler — thrown synchronously, or surfaced as a rejected promise, which Express 5.1.0 forwards automatically — reaches the custom four-arity middleware in `middleware/errorHandler.js`, registered last in `app.js` so that every router precedes it. That middleware logs the detail internally and answers with a generic JSON envelope. A request matching no route never reaches it: Express's own default handler answers that case with an HTML page. So only the first path is centralized through application middleware, and only that path produces JSON.
+The application handles errors on two distinct paths, and they do not share a response format. An error raised inside a route handler — thrown synchronously, or surfaced as a rejected promise, which Express 5.2.1 forwards automatically — reaches the custom four-arity middleware in `middleware/errorHandler.js`, registered last in `app.js` so that every router precedes it. That middleware logs the detail internally and answers with a generic JSON envelope. A request matching no route never reaches it: Express's own default handler answers that case with an HTML page. So only the first path is centralized through application middleware, and only that path produces JSON.
 
 **Error Handling Architecture:**
 - **Route-Level Errors**: Errors thrown in route handlers are automatically caught by Express error middleware

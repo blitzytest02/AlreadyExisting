@@ -1,40 +1,33 @@
-// Request Logger Middleware Unit Test Suite
-// Jest Testing Framework - Version: 29.7.0
-
 // Module under test - default export, an Express middleware function
 const requestLogger = require('../../middleware/requestLogger');
 
-// The shared logger object the middleware captured at load time. Spying on this
-// same object's properties is what lets the assertions read the values logged.
+// The same logger object the middleware captured at load time: Node keys the
+// module cache by resolved path, so a spy installed here is observed inside
+// the middleware. Spying at this level rather than on console also keeps the
+// assertions independent of the '[INFO]:' prefix logger.js adds in development.
 const { logger } = require('../../utils/logger');
 
 /**
  * Request Logger Middleware Unit Tests
  *
- * These are function-level unit tests: the middleware is invoked directly
- * with plain request/response objects and a jest.fn() for next(), with no
- * HTTP driver. requestLogger reads only req.method, req.originalUrl and
- * req.body and never touches the response, so Supertest would add nothing
- * but indirection here.
+ * Function-level tests: the middleware is invoked directly with plain
+ * request/response objects and a jest.fn() for next(), because it reads only
+ * req.method, req.originalUrl and req.body and never touches the response.
  *
- * The suite asserts the value the logger actually received - not merely
- * that the middleware ran - because the whole point of this module is the
- * record it emits. Two properties are covered together.
+ * Each case asserts the values the logger received rather than merely that the
+ * middleware ran, since the record it emits is the whole purpose of the module.
+ * That record is diagnostic rather than minimized, and these cases show it: the
+ * request target is logged exactly as received, query string included, and an
+ * object body is logged as its JSON serialization - field names and values
+ * alike. Nothing is redacted, filtered or summarized. Whoever operates this
+ * application therefore has to control access to the log and bound its
+ * retention.
  *
- * Data minimization. app.js mounts this middleware for every request, so
- * anything it writes is written for every caller. Nothing the caller
- * supplied may appear: not a query value, not a query NAME, not a body
- * value, not a body field NAME, and not text produced by a getter or a
- * toJSON hook the caller planted. Each case below plants a marker string
- * somewhere in the request and asserts that marker appears in none of the
- * arguments handed to logger.info or logger.error.
- *
- * The body-description paths:
- *   1. absent body     -> rendered as '{}' (both undefined and null)
- *   2. primitive body  -> recorded by type as '[<type> - redacted]'
- *   3. object body     -> '[object - N field(s) redacted]', by field count
- *   4. uninspectable   -> '[object - unable to inspect]' plus a logger.error
- *                         call that carries no detail of the failure
+ * One case per body-rendering branch:
+ *   1. object body    -> JSON.stringify(req.body)
+ *   2. primitive body -> String(req.body)
+ *   3. absent body    -> '{}', for both undefined and null
+ *   4. circular body  -> '[Object - Unable to serialize]' plus a logger.error
  *
  * Requirements Addressed:
  * - F-003: Request Processing (per-request observability)
@@ -45,272 +38,121 @@ describe('requestLogger middleware', () => {
   let errorSpy;
   let next;
 
-  // Planted in every fixture that can carry caller-supplied text, so one
-  // assertion covers the whole record rather than a single field
-  const SECRET = 'PLANTED-SECRET-VALUE';
-
   beforeEach(() => {
-    // Silence the real console writes while capturing their arguments
+    // clearMocks in jest.config.js clears call history but leaves a spy's
+    // replacement implementation installed, so each case installs its own and
+    // afterEach restores it. The empty implementation also keeps the real
+    // console quiet under verbose: true.
     infoSpy = jest.spyOn(logger, 'info').mockImplementation(() => {});
     errorSpy = jest.spyOn(logger, 'error').mockImplementation(() => {});
     next = jest.fn();
   });
 
   afterEach(() => {
-    // Restore the genuine logger functions so no state leaks between suites.
-    // clearMocks in jest.config.js resets call history but leaves a spy's
-    // replacement implementation in place, so this is not redundant.
     jest.restoreAllMocks();
   });
 
-  /**
-   * Builds a minimal request stand-in. Only the three fields the middleware
-   * reads are provided; anything else would be dead weight in the fixture.
-   */
+  // Only the three fields the middleware reads. originalUrl is mandatory: the
+  // module logs req.originalUrl and not req.url, so a fixture omitting it
+  // would record 'undefined' as the path.
   const buildRequest = (method, originalUrl, body) => ({
     method,
     originalUrl,
     body
   });
 
-  /**
-   * Renders every argument of every recorded call on both spies as one
-   * string, so a case can assert a planted secret is absent from the whole
-   * record instead of from the single field it happened to check.
-   */
-  const everythingLogged = () =>
-    [...infoSpy.mock.calls, ...errorSpy.mock.calls]
-      .map((call) => call.map((argument) => String(argument)).join(' '))
-      .join(' | ');
+  it('should log an object body as its JSON serialization', () => {
+    const body = { name: 'ada', nested: { id: 42 }, note: null };
 
-  it('should log a pathname with no body and call next()', () => {
-    requestLogger(buildRequest('GET', '/hello', undefined), {}, next);
+    requestLogger(buildRequest('POST', '/hello', body), {}, next);
 
+    // Seven arguments, in order - the logger renders them space-joined
     expect(infoSpy).toHaveBeenCalledTimes(1);
     expect(infoSpy).toHaveBeenCalledWith(
       'HTTP Request -',
       'Method:',
-      'GET',
+      'POST',
       'Path:',
       '/hello',
       'Body:',
-      '{}'
+      JSON.stringify(body)
     );
     expect(errorSpy).not.toHaveBeenCalled();
     expect(next).toHaveBeenCalledTimes(1);
   });
 
-  it('should drop the whole query string, names included', () => {
-    // req.originalUrl carries the query string. A secret can arrive as a
-    // value, as a parameter NAME, or as a bare parameter with no '=' at all,
-    // so the query is dropped entire and only its presence is recorded.
-    const req = buildRequest(
-      'GET',
-      `/hello?token=${SECRET}&${SECRET}=1&${SECRET}`,
-      undefined
-    );
+  it('should coerce a primitive body with String()', () => {
+    // typeof [] is 'object', so an array body takes the JSON.stringify branch;
+    // only a string, number or boolean reaches this one. The query string in
+    // the path is asserted verbatim because that is what the module records.
+    requestLogger(buildRequest('PUT', '/hello?page=2', 42), {}, next);
 
-    requestLogger(req, {}, next);
-
-    expect(infoSpy).toHaveBeenCalledTimes(1);
-    expect(infoSpy).toHaveBeenCalledWith(
-      'HTTP Request -',
-      'Method:',
-      'GET',
-      'Path:',
-      '/hello?[REDACTED]',
-      'Body:',
-      '{}'
-    );
-    expect(everythingLogged()).not.toContain(SECRET);
-    expect(next).toHaveBeenCalledTimes(1);
-  });
-
-  it('should log a trailing question mark as the pathname alone', () => {
-    // '?' with no parameters after it carried nothing to record
-    requestLogger(buildRequest('GET', '/hello?', undefined), {}, next);
-
-    expect(infoSpy).toHaveBeenCalledTimes(1);
-    expect(infoSpy).toHaveBeenCalledWith(
-      'HTTP Request -',
-      'Method:',
-      'GET',
-      'Path:',
-      '/hello',
-      'Body:',
-      '{}'
-    );
-    expect(next).toHaveBeenCalledTimes(1);
-  });
-
-  it('should record a primitive body by type and not by value', () => {
-    const req = buildRequest('PUT', '/hello', `number-${SECRET}`);
-
-    requestLogger(req, {}, next);
-
-    // Exactly one record per request - a duplicate write is a defect too
     expect(infoSpy).toHaveBeenCalledTimes(1);
     expect(infoSpy).toHaveBeenCalledWith(
       'HTTP Request -',
       'Method:',
       'PUT',
       'Path:',
-      '/hello',
+      '/hello?page=2',
       'Body:',
-      '[string - redacted]'
+      '42'
     );
-    expect(everythingLogged()).not.toContain(SECRET);
     expect(errorSpy).not.toHaveBeenCalled();
     expect(next).toHaveBeenCalledTimes(1);
   });
 
-  it('should describe an object body by field count only', () => {
-    // Values, field names and nesting are all caller-supplied, so none of
-    // them is rendered - only how many fields arrived
-    const req = buildRequest('POST', '/hello', {
-      name: SECRET,
-      [`field-${SECRET}`]: 'x',
-      nested: { id: SECRET },
-      note: null
-    });
+  it('should log an absent body as {} for undefined and for null', () => {
+    // The outer guard is a two-operand &&: undefined short-circuits on the
+    // first operand and null fails the second, so both inputs are needed for
+    // the branch to be covered end to end.
+    requestLogger(buildRequest('GET', '/hello', undefined), {}, next);
+    requestLogger(buildRequest('GET', '/hello', null), {}, next);
 
-    requestLogger(req, {}, next);
-
-    expect(infoSpy).toHaveBeenCalledTimes(1);
-    expect(infoSpy).toHaveBeenCalledWith(
-      'HTTP Request -',
-      'Method:',
-      'POST',
-      'Path:',
-      '/hello',
-      'Body:',
-      '[object - 4 field(s) redacted]'
-    );
-    expect(everythingLogged()).not.toContain(SECRET);
-    expect(errorSpy).not.toHaveBeenCalled();
-    expect(next).toHaveBeenCalledTimes(1);
-  });
-
-  it('should not invoke toJSON, getters or unbox wrapper objects', () => {
-    // Three ways a body can hand the logger caller-controlled text if it is
-    // serialized or read: a root toJSON hook, a boxed primitive that
-    // JSON.stringify would unbox, and a getter that returns or throws it.
-    // The middleware counts keys and reads no value, so none of them fires.
-    const withToJson = {
-      toJSON: () => `tojson-${SECRET}`,
-      keep: 1
-    };
-    const boxed = new String(`boxed-${SECRET}`);
-    const withThrowingGetter = {
-      get exploding() {
-        throw new Error(`getter-${SECRET}`);
-      }
-    };
-
-    requestLogger(buildRequest('POST', '/hello', withToJson), {}, next);
-    requestLogger(buildRequest('POST', '/hello', boxed), {}, jest.fn());
-    requestLogger(
-      buildRequest('POST', '/hello', withThrowingGetter),
-      {},
-      jest.fn()
-    );
-
-    expect(infoSpy).toHaveBeenCalledTimes(3);
-    expect(infoSpy.mock.calls[0][6]).toBe('[object - 2 field(s) redacted]');
-    // A boxed primitive's own enumerable keys are its character indices
-    expect(infoSpy.mock.calls[1][6]).toBe(
-      `[object - ${boxed.length} field(s) redacted]`
-    );
-    expect(infoSpy.mock.calls[2][6]).toBe('[object - 1 field(s) redacted]');
-    expect(everythingLogged()).not.toContain(SECRET);
-    expect(errorSpy).not.toHaveBeenCalled();
-    expect(next).toHaveBeenCalledTimes(1);
-  });
-
-  it("should log an absent body as '{}' for both undefined and null", () => {
-    // A callback of its own per invocation. An aggregate count of two would
-    // stay green if one operand of the guard called next() twice while the
-    // other never called it, so each handoff is proved separately.
-    const nextForUndefined = jest.fn();
-    const nextForNull = jest.fn();
-
-    // undefined body - the normal case for GET, since no body parser is mounted
-    requestLogger(
-      buildRequest('GET', '/hello', undefined),
-      {},
-      nextForUndefined
-    );
-
-    // null body - the second half of the guard's short-circuit
-    requestLogger(buildRequest('HEAD', '/hello', null), {}, nextForNull);
-
-    // One record per invocation, and both must render the body as '{}'
     expect(infoSpy).toHaveBeenCalledTimes(2);
-    expect(infoSpy).toHaveBeenNthCalledWith(
-      1,
-      'HTTP Request -',
-      'Method:',
-      'GET',
-      'Path:',
-      '/hello',
-      'Body:',
-      '{}'
-    );
-    expect(infoSpy).toHaveBeenNthCalledWith(
-      2,
-      'HTTP Request -',
-      'Method:',
-      'HEAD',
-      'Path:',
-      '/hello',
-      'Body:',
-      '{}'
-    );
+    infoSpy.mock.calls.forEach((call) => {
+      expect(call).toEqual([
+        'HTTP Request -',
+        'Method:',
+        'GET',
+        'Path:',
+        '/hello',
+        'Body:',
+        '{}'
+      ]);
+    });
     expect(errorSpy).not.toHaveBeenCalled();
-    expect(nextForUndefined).toHaveBeenCalledTimes(1);
-    expect(nextForNull).toHaveBeenCalledTimes(1);
+
+    // Two invocations, so two handoffs - next() sits outside every branch
+    expect(next).toHaveBeenCalledTimes(2);
   });
 
-  it('should report an uninspectable body and still call next()', () => {
-    // A Proxy whose ownKeys trap throws cannot even be counted. The thrown
-    // message is caller-influenced text, so the failure is reported without
-    // it: the error record carries the pathname and nothing else.
-    const uninspectable = new Proxy(
-      {},
-      {
-        ownKeys() {
-          throw new Error(`ownkeys-${SECRET}`);
-        }
-      }
-    );
-    const req = buildRequest('POST', `/hello?${SECRET}=1`, uninspectable);
+  it('should report an unserializable body and still call next()', () => {
+    // A genuine circular reference, so JSON.stringify really throws
+    const body = {};
+    body.self = body;
 
-    expect(() => requestLogger(req, {}, next)).not.toThrow();
+    requestLogger(buildRequest('POST', '/hello', body), {}, next);
 
-    // The fallback marker is logged in place of any description
     expect(infoSpy).toHaveBeenCalledTimes(1);
     expect(infoSpy).toHaveBeenCalledWith(
       'HTTP Request -',
       'Method:',
       'POST',
       'Path:',
-      '/hello?[REDACTED]',
+      '/hello',
       'Body:',
-      '[object - unable to inspect]'
+      '[Object - Unable to serialize]'
     );
 
-    // This is the one path that performs two synchronous writes: this error
-    // record and the request record above
+    // The failure path is the one place the module writes twice: the request
+    // record above, plus this four-argument report of the failure itself
     expect(errorSpy).toHaveBeenCalledTimes(1);
     expect(errorSpy).toHaveBeenCalledWith(
-      'Request body inspection failed for path:',
-      '/hello?[REDACTED]'
+      'Request body serialization failed:',
+      expect.any(String),
+      'for path:',
+      '/hello'
     );
-    expect(everythingLogged()).not.toContain(SECRET);
-
-    // A body inspection failure must not prevent the next() handoff. A logger
-    // that itself threw would still break the cycle - the middleware does not
-    // guard against that, and this case does not claim it does.
     expect(next).toHaveBeenCalledTimes(1);
   });
 });

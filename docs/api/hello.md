@@ -11,7 +11,7 @@ This document provides comprehensive details for the `/hello` API endpoint. This
 - **Path:** `/hello`
 - **Method:** `GET`
 - **Description:** Responds with a static "Hello world" message to demonstrate basic HTTP server functionality and RESTful endpoint implementation.
-- **Framework:** Express.js v5.1.0 with Node.js v22.16.0 LTS
+- **Framework:** Express.js v5.2.1 with Node.js v22.16.0 LTS
 - **Purpose:** Educational demonstration of HTTP request-response patterns and Express routing fundamentals
 
 ---
@@ -147,7 +147,7 @@ The browser will display the plain text response "Hello world" directly on the p
 ## Technical Implementation
 
 ### Framework Details
-- **Express Version:** 5.1.0 (enhanced promise support)
+- **Express Version:** 5.2.1 (enhanced promise support)
 - **Node.js Version:** v22.16.0 LTS
 - **Routing Pattern:** Express Router with modular organization
 - **Response Method:** `res.send()` with automatic Content-Type detection
@@ -210,11 +210,11 @@ This endpoint demonstrates:
 
 ## Security Considerations
 
-- **Input Validation:** Not applicable (no user input accepted)
+- **Input Validation:** No application parameter is required, read or validated. The handler ignores the request entirely and sends the compile-time constant `Hello world`, so the response is input-independent and no request value can steer it. That is not the same as accepting no untrusted input: the HTTP method, the request target (path and query string), the request headers, and the client IP and `User-Agent` derived from them are all caller-controlled, and the application does accept and process them — `src/backend/middleware/requestLogger.js` records the method, path and body of every request, and `src/backend/middleware/errorHandler.js` records request context when it handles an error. Those log records, not the response body, are where untrusted request metadata lands, so treat log access and retention as the control that matters here.
 - **Authentication:** None required (tutorial endpoint)
 - **Authorization:** No access restrictions
-- **Data Exposure:** Only static text response, no sensitive data
-- **Framework Fingerprinting:** Suppressed — `app.disable('x-powered-by')` keeps the `X-Powered-By` header off every response, the only response-header control this application applies
+- **Data Exposure:** The response carries only static text and no sensitive data. Request metadata does reach the process log, as described under Input Validation.
+- **Framework Fingerprinting:** Reduced, not eliminated — `app.disable('x-powered-by')` keeps Express's default `X-Powered-By` header off every response, and is the only response-header control this application applies. Removing that header reduces casual fingerprinting; it does not prevent identification of the framework, which Express's own default 404 page (`Cannot GET /<path>`) still reveals.
 - **Rate Limiting:** Not implemented (tutorial scope)
 
 ---

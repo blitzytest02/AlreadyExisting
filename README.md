@@ -4,11 +4,11 @@ A comprehensive Node.js tutorial application that demonstrates fundamental web s
 
 ## 🚀 About The Project
 
-This application is built to provide a hands-on, practical example for understanding server-side JavaScript development. It adheres to modern Node.js v22.16.0 LTS and Express.js v5.1.0 standards, demonstrating HTTP request handling, RESTful API endpoint creation, and contemporary web application architecture patterns.
+This application is built to provide a hands-on, practical example for understanding server-side JavaScript development. It adheres to modern Node.js v22.16.0 LTS and Express.js v5.2.1 standards, demonstrating HTTP request handling, RESTful API endpoint creation, and contemporary web application architecture patterns.
 
 ### ✨ Key Features
 
-- **Modern Technology Stack**: Built with Node.js v22.16.0 LTS and Express.js v5.1.0
+- **Modern Technology Stack**: Built with Node.js v22.16.0 LTS and Express.js v5.2.1
 - **Educational Focus**: Designed specifically for learning fundamental Node.js concepts
 - **Production-Ready Architecture**: Demonstrates enterprise-grade development patterns
 - **Comprehensive Documentation**: Extensive guides for setup, deployment, and contribution
@@ -18,13 +18,13 @@ This application is built to provide a hands-on, practical example for understan
 ### 🛠 Built With
 
 - **[Node.js](https://nodejs.org/)** (v22.16.0 LTS) - JavaScript runtime providing the server-side execution environment
-- **[Express.js](https://expressjs.com/)** (v5.1.0) - Fast, unopinionated web framework with enhanced promise support
+- **[Express.js](https://expressjs.com/)** (v5.2.1) - Fast, unopinionated web framework with enhanced promise support
 - **[npm](https://www.npmjs.com/)** (v11.4.1+) - Package manager for dependency management
 
 ### 🏗 Technical Specifications
 
 - **Node.js Version**: v22.16.0 LTS (codename 'Jod') with V8 12.4 JavaScript engine
-- **Express Version**: 5.1.0 with automatic promise rejection handling
+- **Express Version**: 5.2.1 with automatic promise rejection handling
 - **Platform Support**: Cross-platform compatibility (Windows, macOS, Linux)
 - **Performance Target**: Response time < 100ms, Memory usage < 50MB
 - **Security**: Implements ReDoS attack mitigation and modern security headers
@@ -64,7 +64,7 @@ For detailed prerequisite information and system-specific installation guides, s
    ```bash
    npm install
    ```
-   This installs Express.js 5.1.0 and all required dependencies as specified in `package.json`.
+   This installs Express.js 5.2.1 and all required dependencies as specified in `package.json`.
 
 4. **Create environment configuration**
    ```bash
@@ -137,7 +137,7 @@ curl -i http://localhost:3000/hello
 [INFO]: 🚀 HTTP Server successfully started and listening on port 3000
 [INFO]: 🌐 Server is ready to accept HTTP requests
 [INFO]: 📍 Local development URL: http://localhost:3000
-[INFO]: ⚡ Node.js v22.16.0 | Express 5.1.0 | Environment: development
+[INFO]: ⚡ Node.js v22.16.0 | Express 5.2.1 | Environment: development
 [INFO]: 🎯 Tutorial application initialized successfully
 ```
 
@@ -339,7 +339,7 @@ The ISC License allows for:
 This tutorial application demonstrates:
 
 - **Modern Node.js Development**: Node.js v22.16.0 LTS with ES2022+ features
-- **Express.js Framework**: Version 5.1.0 with enhanced promise support
+- **Express.js Framework**: Version 5.2.1 with enhanced promise support
 - **Production Patterns**: Enterprise-grade architecture and security practices
 - **DevOps Integration**: Docker, Kubernetes, and CI/CD configurations
 - **Testing Strategies**: Comprehensive testing with coverage requirements

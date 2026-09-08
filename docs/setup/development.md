@@ -1,6 +1,6 @@
 # Local Development Setup Guide
 
-This comprehensive guide provides step-by-step instructions for setting up the Node.js tutorial application on your local machine for development and testing purposes. The setup process creates a robust development environment using Node.js v22.16.0 LTS and Express.js 5.1.0.
+This comprehensive guide provides step-by-step instructions for setting up the Node.js tutorial application on your local machine for development and testing purposes. The setup process creates a robust development environment using Node.js v22.16.0 LTS and Express.js 5.2.1.
 
 ## Table of Contents
 
@@ -23,7 +23,7 @@ Before you begin, ensure you have the following software installed on your syste
 
 #### Node.js (Required)
 - **Version**: Node.js v22.16.0 LTS or higher
-- **Minimum**: Node.js v18.0.0 (Express.js 5.1.0 requirement)
+- **Minimum**: Node.js v18.0.0 (Express.js 5.2.1 requirement)
 - **Justification**: Node.js v22, codename 'Jod', is the release line this project targets, builds against in CI and is tested on
 
 **Installation Verification:**
@@ -142,7 +142,6 @@ the block runs as written.
 # Set this to the repository URL you were given
 REPOSITORY_URL="https://github.com/your-organization/nodejs-tutorial.git"
 
-# Clone the repository
 git clone "$REPOSITORY_URL"
 
 # Enter the clone. This is the only step that depends on the directory name:
@@ -212,12 +211,12 @@ cd "$(git rev-parse --show-toplevel)/src/backend"
 Examine the `package.json` file to understand the dependencies that will be installed:
 
 **Core Dependencies (Production):**
-- `express: 5.1.0` - Web application framework (exact version pin)
+- `express: 5.2.1` - Web application framework (exact version pin)
 - `dotenv: ^16.3.1` - Environment variable management
 
 **Development Dependencies:**
 - `nodemon: ^3.0.0` - Automatic server restart during development
-- `supertest: 7.1.1` - HTTP testing library for integration tests
+- `supertest: 7.2.2` - HTTP testing library for integration tests
 - `jest: ^29.7.0` - Test runner for the unit and integration suites
 
 **Package.json Scripts:**
@@ -236,7 +235,7 @@ npm install
 ```
 
 **Installation Process Details:**
-- Downloads Express.js 5.1.0 and related packages
+- Downloads Express.js 5.2.1 and related packages
 - Creates `node_modules` directory with all dependencies
 - Installs the versions pinned by the committed `package-lock.json`, which is the authoritative dependency graph — npm writes a new lockfile only when none is present, and rewrites the committed one only when it no longer agrees with `package.json`
 - Installs approximately 50+ packages including transitive dependencies
@@ -264,10 +263,10 @@ npm audit
 ```
 nodejs-tutorial-app-backend@1.0.0
 ├── dotenv@16.6.1
-├── express@5.1.0
+├── express@5.2.1
 ├── jest@29.7.0
 ├── nodemon@3.1.11
-└── supertest@7.1.1
+└── supertest@7.2.2
 ```
 
 ### 2.3 Dependency Security Audit
@@ -393,14 +392,12 @@ PORT=3000
 If port 3000 is already in use, configure an alternative port. Set exactly one
 value: within a single file dotenv keeps the last assignment of a key, so
 several uncommented `PORT` lines do not offer a choice - they collapse silently
-to whichever one comes last. Uncomment the port you want and leave the others
-commented out:
+to whichever one comes last. Write the port you want as the only `PORT` line in
+the file - `8000` and `8080` work exactly the same way as the `3001` shown here:
 
 ```env
-# Alternative development ports - uncomment exactly one
+# Development port - this must be the file's only PORT assignment
 PORT=3001
-# PORT=8000
-# PORT=8080
 ```
 
 To try a port without editing any file, set it on the command line for a single
@@ -522,7 +519,7 @@ npm start
 [INFO]: 🚀 HTTP Server successfully started and listening on port 3000
 [INFO]: 🌐 Server is ready to accept HTTP requests
 [INFO]: 📍 Local development URL: http://localhost:3000
-[INFO]: ⚡ Node.js v22.16.0 | Express 5.1.0 | Environment: development
+[INFO]: ⚡ Node.js v22.16.0 | Express 5.2.1 | Environment: development
 [INFO]: 🎯 Tutorial application initialized successfully
 ```
 
@@ -921,30 +918,52 @@ npm start
 #### Container Testing
 
 Test the Docker image created by the script. Run the container **detached**
-(`-d`) and give it a name: a foreground `docker run` holds the terminal for as
-long as the container lives, so a `curl` typed after it in the same terminal
-never executes. The name is what lets you read its logs and remove it
-afterwards.
+(`-d`) and capture the ID it prints: a foreground `docker run` holds the
+terminal for as long as the container lives, so a `curl` typed after it in the
+same terminal never executes. The ID is what identifies that one container to
+every command that follows — its logs, and its removal.
+
+The whole check runs inside `( … )`. That subshell is what makes the block safe
+to paste: the cleanup trap and the `exit` below belong to it, so your terminal
+keeps neither, and the compound command's exit status is the verdict — zero when
+the endpoint answered, non-zero when it did not. The container does not outlive
+the block, by design; when you want one to stay up and poke at it, use the
+runtime-diagnosis sequence in section 8.5 instead.
 
 ```bash
-# Clear any container left from an earlier attempt: a name cannot be reused
-# while a container holds it, even a stopped one
-docker rm -f nodejs-tutorial-test 2>/dev/null || true
+(
+  # Name this run uniquely - $$ is your shell's process ID - and keep the ID
+  # docker run prints. Every command here addresses that exact container. Do
+  # not force-remove a fixed name first: container names are daemon-global, so
+  # on a shared machine the name may belong to another workload, and a name
+  # freed that way can be taken by something else before the next command runs.
+  # If this name is somehow already in use, docker run fails and says so, which
+  # is the outcome you want.
+  CONTAINER_ID="$(docker run -d --name "nodejs-tutorial-test-$$" -p 3000:3000 nodejs-tutorial-app:latest)" || exit 1
 
-# Start the containerized application in the background
-docker run -d --name nodejs-tutorial-test -p 3000:3000 nodejs-tutorial-app:latest
+  # Remove that exact container however this block ends - normally, on the
+  # failure path below, or on Ctrl+C - so it never keeps port 3000 bound. The
+  # trap addresses the captured ID and nothing else.
+  trap 'docker rm -f "$CONTAINER_ID" >/dev/null 2>&1' EXIT
 
-# Wait for it to answer, for at most 30 seconds
-for _ in $(seq 1 30); do
-  curl -fsS http://localhost:3000/hello && break
-  sleep 1
-done
+  # Wait for it to answer, for at most 30 seconds, and record whether it ever
+  # did. Without the flag the loop would finish successfully after 30 failed
+  # probes, because the last thing it ran was the sleep.
+  READY=no
+  for _ in $(seq 1 30); do
+    if curl -fsS http://localhost:3000/hello; then READY=yes; break; fi
+    sleep 1
+  done
 
-# If it never answered, read the container's own output for the reason
-docker logs nodejs-tutorial-test
-
-# Remove the container when you are finished (it keeps port 3000 bound until you do)
-docker rm -f nodejs-tutorial-test
+  # Only when it never answered: read the container's own output for the reason,
+  # and end the block non-zero so a script wrapping it stops here. This `exit`
+  # leaves the subshell, not your terminal.
+  if [ "$READY" = no ]; then
+    docker logs "$CONTAINER_ID" >&2
+    echo "container $CONTAINER_ID did not answer within 30 seconds" >&2
+    exit 1
+  fi
+)
 ```
 
 The `curl` runs on your host against the published port, not inside the
@@ -1217,22 +1236,19 @@ PORT=3000 npm start
 PORT=8080 npm start
 ```
 
-When a low port is genuinely required, put something in front of the application rather than elevating it: terminate port 80 or 443 in a reverse proxy (nginx, Caddy, a cloud load balancer) that forwards to this process on its unprivileged port, which is also how the container and Kubernetes manifests in this repository expose it. Failing that, grant the capability to the Node binary once, as a deliberate one-off system change, instead of elevating every `npm start`:
+When a low port is genuinely required, put something in front of the application rather than elevating it: terminate port 80 or 443 in a reverse proxy (nginx, Caddy, a cloud load balancer) that forwards to this process on its unprivileged port, which is also how the container and Kubernetes manifests in this repository expose it. Locally, publishing a container port does the same job — `docker run -p 80:3000 nodejs-tutorial-app:latest` has the Docker daemon bind the privileged port, since it already holds that privilege, and leaves the application listening on 3000.
 
-```bash
-# Linux only. This applies to every process started from that binary,
-# so treat it as a system change and not part of routine development.
-sudo setcap 'cap_net_bind_service=+ep' "$(command -v node)"
-```
+What this guide deliberately does not do is grant `cap_net_bind_service` to the Node binary. That capability attaches to the shared interpreter, not to this application, so **every** Node process on the machine — including anything a dependency in any other project starts — would gain the ability to bind privileged ports, and it would keep it until someone removes it. If a host genuinely needs the capability, scope it to one service instead of to the interpreter: run this application under its own service manager unit and grant the capability there, which for systemd means `AmbientCapabilities=CAP_NET_BIND_SERVICE` on that unit alone.
 
 #### Node.js Version Incompatibility
 
-**Problem**: Express.js 5.1.0 requires Node.js >= 18.0.0.
+**Problem**: Express.js 5.2.1 requires Node.js >= 18.0.0.
 
 **Diagnosis:**
 ```bash
 node --version
-# If shows v16.x.x or lower, upgrade needed
+# Any version below v18.0.0 needs an upgrade: the package floor is >=18.0.0, so
+# v17.x fails it exactly as v16.x does
 ```
 
 **Solution:**
@@ -1263,9 +1279,26 @@ nvm use 22.16.0
    npm config get registry
    # Should return: https://registry.npmjs.org/
    
-   # Record where that value comes from before changing anything
-   npm config list --location=user
+   # That effective value can come from any of six places: a command-line flag,
+   # an npm_config_* environment variable, a project .npmrc, your user .npmrc,
+   # the global .npmrc, or npm's built-in default. This listing prints a
+   # `; "<layer>" config from <path>` header for each source that actually set
+   # something, and marks the values a later layer overrode - so it tells you
+   # which layer to change, and a setting with no header behind it is coming
+   # from npm's default rather than from any file.
+   npm config list
+
+   # Where the user-level file lives, for when the listing above shows no
+   # section for it and you want to create it. This prints the path only -
+   # never cat an .npmrc, which is also where auth tokens are kept.
+   npm config get userconfig
    ```
+
+   `--location=user` is not a filter on that listing: it selects which file
+   `npm config set`, `get`, `delete` and `edit` operate on, and
+   `npm config list --location=user` still prints values coming from the
+   environment or the command line. Read provenance from the merged listing
+   above, and use `--location` only when you are changing a specific file.
 
    If the registry is not the official one, that is usually deliberate, such as an organization proxy. Override it for a single command with the `--registry` flag instead of rewriting your saved configuration, which would apply to every project on the machine:
 
@@ -1422,26 +1455,33 @@ As in section 3.3, read individual keys with `grep -E '^KEY=' .env` rather than 
    and `PORT=3000` parse to the same value. Two different things do bite, and
    the parsed key list above tells them apart - a key missing from that list was
    never parsed, while a key present in it that still has no effect lost to
-   something already in the environment:
+   something already in the environment. Both are reproduced below against a
+   throwaway file, so the results do not depend on what your own `.env` happens
+   to contain:
 
    ```bash
-   # 1. NEVER PARSED: a line with no `=` is silently ignored, so the key never
-   #    arrives and the default stays in force. This file yields only PORT and
-   #    NODE_ENV - APP_NAME is dropped without any warning, and it is absent
-   #    from the parsed key list:
-   #        PORT=3001
-   #        APP_NAME tutorial      <- no `=`, silently skipped
-   #        NODE_ENV=development
-   #
+   # A deliberately malformed file to demonstrate against. mktemp -d puts it in
+   # a directory with a random name that only your account can read, so nothing
+   # here touches the checkout or your own .env.
+   FIXTURE_DIR="$(mktemp -d)"
+   printf 'PORT=3001\nAPP_NAME tutorial\nNODE_ENV=development\n' > "$FIXTURE_DIR/.env"
+
+   # 1. NEVER PARSED: the APP_NAME line has no `=`, so dotenv skips it in
+   #    silence. This prints [ 'PORT', 'NODE_ENV' ] - APP_NAME is dropped
+   #    without any warning, it is absent from the parsed key list, and the
+   #    built-in default stays in force.
+   node -e "console.log(Object.keys(require('dotenv').config({ path: process.argv[1] }).parsed));" "$FIXTURE_DIR/.env"
+
    # 2. PARSED BUT NOT APPLIED: a variable already present in the environment is
    #    never overwritten by the file, so the key still appears in the parsed
-   #    list while a shell value decides what the application sees. Compare:
-   node -e "console.log('from .env:', require('./config').port);"
-   PORT=9999 node -e "console.log('shell wins:', require('./config').port);"
+   #    list while a shell value decides what the application sees. This prints
+   #    the configuration summary, then `parsed from file: 3001 | resolved: 9999`
+   #    - dotenv reports the file value it parsed, the application resolves the
+   #    environment value.
+   PORT=9999 node -e "const r = require('dotenv').config({ path: process.argv[1] }); console.log('parsed from file:', r.parsed.PORT, '| resolved:', require('./config').port);" "$FIXTURE_DIR/.env"
 
-   # The second case is visible by comparing the two: dotenv reports the file
-   # value it parsed, and the application resolves the environment value.
-   PORT=9999 node -e "const r = require('dotenv').config(); console.log('parsed from file:', r.parsed && r.parsed.PORT, '| resolved:', require('./config').port);"
+   # Remove the fixture directory this block created
+   rm -rf "$FIXTURE_DIR"
    ```
 
 ### 8.4 Performance Issues
@@ -1565,8 +1605,15 @@ ls -la .
 
 3. **Network Issues:**
    ```bash
-   # Test Docker Hub connectivity
+   # Pull the base image to verify registry access. This is not a passive
+   # connectivity test: it downloads layers and updates the local image cache
+   # for node:22-alpine, which is also what the build needs.
    docker pull node:22-alpine
+
+   # Read-only alternative: queries the registry for the image's manifest and
+   # writes nothing to the local cache. Needs the buildx plugin, which current
+   # Docker installations include.
+   docker buildx imagetools inspect node:22-alpine
    ```
 
 #### Container Runtime Issues
@@ -1576,44 +1623,84 @@ ls -la .
 The steps below are one sequence in a single terminal: the diagnosis names the
 container, the solutions act on that same container, and the last step removes
 it. Run them in order, and run the cleanup even if you stop early — the
-container holds the published port until you do.
+container holds the published port until you do. Unlike the self-contained check
+in section 6.4, this procedure cannot put its cleanup in a trap: the container
+has to outlive each block so the next step can inspect it, so removal is step 3
+and it is yours to run. It removes the exact ID captured here and nothing else.
 
 **Diagnosis:**
 ```bash
 # Check containers, including ones that have already exited
 docker ps -a
 
-# Resolve the container by the name you gave it, into a quoted variable, so no
-# placeholder has to be substituted by hand. An empty result means it is not
-# there, and step 1 below starts it.
-CONTAINER_ID="$(docker ps -aqf name=nodejs-tutorial-test)"
+# The container this procedure works on. If you already have one running from
+# section 6.4, put its name here; otherwise leave this and step 1 starts it.
+CONTAINER_NAME="nodejs-tutorial-test-$$"
 
-# If it exists, read its output and its full inspected state
+# Resolve that exact container into a quoted variable, so no placeholder has to
+# be substituted by hand. The `^/` and `$` anchors are required: Docker matches
+# `name=` as a substring, so an unanchored filter also returns every container
+# whose name merely contains this one, and two matches would put two IDs in the
+# variable. An empty result means it is not there, and step 1 below starts it.
+CONTAINER_ID="$(docker ps -aqf "name=^/${CONTAINER_NAME}$")"
+
+# If it exists, read its output and the specific state fields you need
 if [ -n "$CONTAINER_ID" ]; then
   docker logs "$CONTAINER_ID"
-  docker inspect "$CONTAINER_ID"
+  docker inspect --format 'status={{.State.Status}} exit={{.State.ExitCode}} ports={{json .NetworkSettings.Ports}}' "$CONTAINER_ID"
 fi
 ```
 
+Ask `docker inspect` for the fields you need, as above. Without `--format` it
+prints the container's entire configuration, and that includes `Config.Env` —
+every environment value the container was started with — so a full dump is the
+wrong thing to leave in a terminal you share, paste into an issue, or let a CI
+job record.
+
 **Solutions:**
 
-1. **Port Mapping** — start the container with the port published, then re-resolve
-   the ID so the checks below have something to address.
+1. **Port Mapping** — start the container with the port published, capturing the
+   ID `docker run` prints so the checks below have something to address.
    ```bash
-   # Remove any earlier container of this name first: --name cannot be reused
-   # while one exists, even a stopped one
-   docker rm -f nodejs-tutorial-test 2>/dev/null || true
+   # Start one only if the diagnosis found none. A non-empty $CONTAINER_ID means
+   # that container already exists, so this never starts a duplicate under the
+   # same name - and nothing is force-removed first, because a name still in use
+   # should make docker run report the conflict rather than have you delete a
+   # container you did not create.
+   if [ -z "$CONTAINER_ID" ]; then
+     CONTAINER_ID="$(docker run -d --name "$CONTAINER_NAME" -p 3000:3000 nodejs-tutorial-app:latest)"
+   fi
 
-   # Publish the container's port 3000 on the host, detached and named
-   docker run -d --name nodejs-tutorial-test -p 3000:3000 nodejs-tutorial-app:latest
+   # Every command below addresses $CONTAINER_ID, so establish first that there
+   # is a running container behind it. Two different failures land here: a name
+   # conflict, where docker run prints nothing and the variable stays empty; and
+   # a port conflict, where the container is created but never starts, so the ID
+   # exists while the state reads `created`. Step 3 removes it either way.
+   if [ -z "$CONTAINER_ID" ] ||
+      [ "$(docker inspect --format '{{.State.Status}}' "$CONTAINER_ID" 2>/dev/null)" != running ]; then
+     echo "no running container to diagnose; resolve the docker run error above" >&2
+   else
+     # Wait for it to answer, recording whether it ever did - a bare loop would
+     # finish successfully after 30 failed probes, because its last act is a sleep
+     READY=no
+     for _ in $(seq 1 30); do
+       if curl -fsS http://localhost:3000/hello; then READY=yes; break; fi
+       sleep 1
+     done
 
-   # Re-resolve the ID now that the container exists, and wait for it to answer
-   CONTAINER_ID="$(docker ps -aqf name=nodejs-tutorial-test)"
-   for _ in $(seq 1 30); do
-     curl -fsS http://localhost:3000/hello && break
-     sleep 1
-   done
+     # Its own output is the next thing to read, but only if it stayed silent
+     if [ "$READY" = no ]; then
+       docker logs "$CONTAINER_ID" >&2
+       echo "container $CONTAINER_ID did not answer within 30 seconds" >&2
+     fi
+   fi
    ```
+
+   Steps 2 and 3 both address `$CONTAINER_ID`. If the block above printed `no
+   running container to diagnose`, then nothing below is measuring the
+   application — deal with what `docker run` reported first. Step 3 is still
+   worth running: a container that was created but never started is holding the
+   name until you remove it.
 
 2. **Container Health:**
    ```bash
@@ -1632,10 +1719,10 @@ fi
    `docker exec -it … sh` and then type `curl` at the container's shell: that
    shell has no curl, and the interactive session will not exit on its own.
 
-3. **Clean up** — remove the container this procedure started, which also
-   releases the host port:
+3. **Clean up** — remove the container this procedure started, by the ID it was
+   started under, which also releases the host port:
    ```bash
-   docker rm -f nodejs-tutorial-test
+   docker rm -f "$CONTAINER_ID"
    ```
 
 ## 9. Advanced Configuration
@@ -1691,11 +1778,18 @@ as `**/.env.*` to the root `.dockerignore` before building. Either way, check
 the image rather than assuming:
 
 ```bash
-# Build from the repository root - both build contexts are the repository root
+# Build from the repository root - both build contexts are the repository root,
+# while the rest of this guide runs in src/backend, so move there and back
+cd "$(git rev-parse --show-toplevel)"
 docker build --file infrastructure/docker/Dockerfile --tag tutorial-env-check .
 
-# Nothing should be listed. Anything printed here is shipped inside the image.
+# `no environment files in image` is the result you want: it is the fallback the
+# command prints when the listing finds nothing. A printed `.env*` filename is
+# the failure - that file is shipped inside the image.
 docker run --rm --entrypoint sh tutorial-env-check -c 'ls -a /usr/src/app | grep "^\.env" || echo "no environment files in image"'
+
+# Return to the directory the following blocks expect
+cd "$(git rev-parse --show-toplevel)/src/backend"
 ```
 
 **Environment File Organization:**
@@ -2039,36 +2133,53 @@ app.use(security.rateLimiter);
 Node.js ships the profilers this application needs, so the starting point requires no dependency at all:
 
 ```bash
-# Keep diagnostic output out of the checkout: profile files and Clinic's
-# .clinic/ directory are not covered by .gitignore
-mkdir -p /tmp/node-profiles
+# Keep diagnostic output out of the checkout: profile files are not covered by
+# .gitignore. Send it to a directory mktemp -d creates under a random name
+# rather than a fixed path such as /tmp/node-profiles - a predictable name in a
+# shared directory can already exist, be readable by other accounts, or be
+# replaced between the profile run and the moment you read the report.
+PROFILE_DIR="$(mktemp -d)"
+
+# Everything below writes into that directory, so stop if it was not created:
+# with an empty variable the profilers fall back to the working directory,
+# which is the checkout this block exists to keep clean.
+[ -d "$PROFILE_DIR" ] || echo "mktemp -d failed; do not run the commands below" >&2
+
+# mktemp -d already restricts the directory to your account; setting the mode
+# explicitly states that requirement rather than relying on the default
+chmod 700 "$PROFILE_DIR"
+
+# If this shell is interrupted or terminated before you reach the removal at the
+# end, take the directory with it. An interrupted profile run writes no report -
+# see the note below - so nothing is lost, and nothing is left behind either.
+# The trap is not on EXIT: the reports are the point of the exercise and you
+# need them to survive the block long enough to open them.
+trap 'rm -rf -- "$PROFILE_DIR"' INT TERM
 
 # CPU profile: writes CPU.<date>.<time>.<pid>.<n>.cpuprofile into the chosen
 # directory, which loads in Chrome DevTools (Performance panel) or VS Code
-node --cpu-prof --cpu-prof-dir=/tmp/node-profiles server.js
+node --cpu-prof --cpu-prof-dir="$PROFILE_DIR" server.js
 
 # Heap allocation profile: writes Heap.<date>.<time>.<pid>.<n>.heapprofile the
 # same way, which loads in the Chrome DevTools Memory panel
-node --heap-prof --heap-prof-dir=/tmp/node-profiles server.js
+node --heap-prof --heap-prof-dir="$PROFILE_DIR" server.js
 
 # Live inspection: attach chrome://inspect or a VS Code debug session. This
 # writes nothing to disk and needs no exit
 node --inspect server.js
 
-# Remove the reports when you are finished with them
-rm -rf /tmp/node-profiles
+# Remove the reports when you are finished reading them, and drop the trap with
+# them so it does not outlive this block. This deletes the one directory the
+# block created, named in $PROFILE_DIR, and nothing else.
+trap - INT TERM
+rm -rf -- "$PROFILE_DIR"
 ```
 
 Both profile flags write their report **only when the process exits cleanly**, and this server registers no `SIGINT` or `SIGTERM` handler: interrupting it with Ctrl+C terminates it before anything is written. Measured on Node.js v22, neither `SIGINT` nor `SIGKILL` produces a file. So for a long-running server use `node --inspect` and record in DevTools, and keep the two profile flags for a workload that exits on its own.
 
 Hosted APM agents (New Relic, Datadog, Elastic APM and similar) are an optional addition. Each has its own installation and configuration procedure and their agent APIs change between major versions, so follow the vendor's current documentation rather than a snippet reproduced here.
 
-**Clinic is historical.** The top-level `clinic` package is a command-line tool and exposes no `start()` entry point for application code to call, and the project is no longer actively maintained — version 13.0.0 was published in June 2023. If you want it for comparison, invoke it as a CLI, and send its report outside the checkout: Clinic writes into `.clinic/` in the working directory unless `--dest` says otherwise.
-
-```bash
-# Historical reference only — driven from the command line, never imported
-npx clinic doctor --dest /tmp/node-profiles -- node server.js
-```
+**Clinic is historical, and this guide does not run it.** The top-level `clinic` package is a command-line tool and exposes no `start()` entry point for application code to call, and the project is no longer actively maintained — version 13.0.0 was published in June 2023. It is not a dependency of this project, so reaching it through `npx` would download and execute whichever version the registry serves at that moment, outside the audited `package-lock.json` everything else here installs from, and an unmaintained profiler can fail or report inaccurately with no one to fix it. The built-in profilers above cover the same ground and are part of the runtime you already have. If you do need Clinic to reproduce a historical measurement, install an exact version into a throwaway project of its own — never into this checkout — drive it from the command line with `--dest` pointing outside any repository, since it otherwise writes into `.clinic/` in the working directory, and treat what it reports as unsupported.
 
 **Performance Monitoring Setup:**
 
@@ -2438,7 +2549,7 @@ Production security checklist:
 You have set up the development environment for the tutorial application and verified it end to end. This foundation provides:
 
 - **Node.js v22.16.0**: the runtime version this project targets and is tested against
-- **Express.js 5.1.0**: the exact pinned framework version, with Express 5's promise-aware routing and automatic propagation of errors thrown in async handlers
+- **Express.js 5.2.1**: the exact pinned framework version, with Express 5's promise-aware routing and automatic propagation of errors thrown in async handlers
 - **Development Tools**: automatic restart through Nodemon, Jest and Supertest suites behind a 90% coverage gate, and Node.js's built-in inspector and profilers
 - **Deployment material, unverified**: a multi-stage Dockerfile, a Compose file, Kubernetes manifests and a CD workflow are committed, but none is verified end to end — Docker Compose and the deployment pipeline have known defects. Treat sections 9 and 10 as a starting point for further work rather than as a production configuration.
 

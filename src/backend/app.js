@@ -1,25 +1,10 @@
 /**
  * Express Application Composition Root
  *
- * Creates and configures the Express application instance for the Node.js
- * tutorial application. This module owns framework composition and nothing
- * else: it declares no routes, reads no environment variables and emits no
- * log records of its own. Those responsibilities belong to routes/, config/
- * and utils/logger.js respectively.
- *
- * Separating composition (this module) from transport (server.js) is what
- * makes the application testable: Supertest can drive the exported app
- * directly, with no bound port, while server.js wraps the same instance in
- * an http.Server for real traffic.
- *
- * Registration Order (significant, not stylistic):
- * 1. requestLogger - observes every request before any handler runs, so
- *    requests are recorded whether they succeed, 404 or fail.
- * 2. routes       - the aggregated router, which mounts the /hello endpoint.
- * 3. errorHandler - registered LAST. Express only routes to a four-argument
- *    handler that is registered after every router, and errorHandler
- *    deliberately terminates the chain instead of calling next(). Moving it
- *    earlier silently disables it.
+ * Owns framework composition and nothing else: no routes, no configuration
+ * reads, no log records of its own. Keeping composition separate from
+ * transport (server.js) is what lets Supertest drive the exported app with no
+ * bound port, while server.js wraps the same instance in an http.Server.
  *
  * Requirements Addressed:
  * - F-001: HTTP Server Initialization (application wiring for the request
@@ -27,61 +12,45 @@
  * - F-002: Hello Endpoint Response (makes the /hello route reachable)
  * - F-003: Request Processing (middleware chain composition)
  *
- * The export is annotated with the built-in Function type rather than an
- * Express-specific type symbol: Express 5.1.0 publishes no TypeScript
- * declarations, no declaration package for it is a dependency of this project
- * and none may be added, so such a symbol would not resolve for any reader or
- * tool. Function is accurate as well as resolvable - an Express application is
- * a callable request listener, which is exactly why server.js can hand it
- * straight to http.createServer().
- *
  * @module app
  * @type {Function}
  */
 
-// A CommonJS script is not strict unless it says so, and .eslintrc.js enables
-// strict: ['error', 'global'], so the directive is declared explicitly here.
 'use strict';
 
-// Express web framework - provides the application object, routing and
-// response helpers
-const express = require('express'); // Version: 5.1.0
+const express = require('express');
 
 // Aggregated application router (default export) - mounts /hello
 const routes = require('./routes');
 
-// Per-request logging middleware (default export) - runs before any route
-// handler
+// Per-request logging middleware (default export) - runs before any handler
 const requestLogger = require('./middleware/requestLogger');
 
 // Terminal error-handling middleware (NAMED export) - must be registered last
 const { errorHandler } = require('./middleware/errorHandler');
 
-// Instantiate the Express application that both server.js and the test
-// suites consume
 const app = express();
 
-// Suppress the X-Powered-By response header so responses do not advertise the
-// framework in use. Express sets this header unless it is explicitly disabled.
+// Remove the X-Powered-By header Express sets by default - the only
+// response-header control here. It strips the framework banner from every
+// response and reduces casual fingerprinting; it does not prevent
+// identification, which Express's own default 404 page still reveals.
 app.disable('x-powered-by');
 
-// 1. Observability: log method, path and body for every incoming request
+// 1. Observability: requestLogger records the method, path and req.body of
+//    every request, then calls next(). No body parser runs, so body is '{}'.
 app.use(requestLogger);
 
 // 2. Routing: mount the aggregated router at the application root, which
 //    exposes GET /hello via the router's own '/hello' mount
 app.use('/', routes);
 
-// 3. Error handling: terminal four-arity middleware, registered after all
-//    routers
+// 3. Error handling: errorHandler must stay last. Express hands an error to a
+//    four-argument handler only when it is registered after every router, and
+//    this one ends the chain itself: it sends the 500 envelope and passes the
+//    error to no application middleware, because none is registered behind
+//    it. A response that has already started is the one case it cannot
+//    answer, and there Express's own final handler closes the connection.
 app.use(errorHandler);
 
-/**
- * Export the configured Express application.
- *
- * Consumers:
- * - server.js passes it to http.createServer() as the request listener
- * - tests/unit/hello.test.js and tests/integration/hello.test.js drive it
- *   via Supertest
- */
 module.exports = app;

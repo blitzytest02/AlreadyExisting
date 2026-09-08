@@ -1,141 +1,42 @@
-// Express.js v5.1.0 - Pinned release with enhanced promise support and automatic error handling
+// Express.js v5.2.1 - Pinned release with enhanced promise support and automatic error handling
 const express = require('express');
 
 /**
- * Express Router Instance for Hello Endpoint
- * 
- * Creates a new Express Router instance specifically for handling the /hello endpoint.
- * This router will be mounted in the main application router to handle requests
- * to the /hello path as specified in F-002-RQ-001.
- * 
- * Express 5.1.0 features utilized:
- * - Enhanced promise support with automatic rejection handling
- * - Updated path-to-regexp@8.x for improved security (ReDoS mitigation)
- * - Improved middleware error handling capabilities
+ * Express Router serving the /hello endpoint (F-002-RQ-001). The route
+ * aggregator mounts this router at the /hello path.
  */
 const router = express.Router();
 
 /**
  * GET /hello Endpoint Handler
- * 
- * Handles HTTP GET requests to the root path of this router (which corresponds
- * to /hello when mounted in the main application). This endpoint implements
- * the core business logic for the hello world demonstration.
- * 
- * Requirements Implementation:
- * - F-002-RQ-001: Defines the route handler for the /hello path
- * - F-002-RQ-002: Returns the exact text "Hello world"
- * - F-002-RQ-003: Declares only the GET HTTP method (see router.get below).
- *   Express derives two further methods from that single GET declaration:
- *   HEAD /hello returns 200 with headers only, as HTTP semantics require, and
- *   OPTIONS /hello returns 200 with an "Allow: GET, HEAD" header. POST, PUT and
- *   DELETE match no route and are answered by Express's default handler with 404.
- *   The derived HEAD behaviour is depended upon rather than incidental: the
- *   container health check probes this path with a bounded node http.request
- *   probe whose method is HEAD, so HEAD must not be suppressed
- *   (infrastructure/docker/Dockerfile).
- * - F-004-RQ-003: Sends the "Hello world" text in the response body
- * 
- * Technical Specifications:
- * - Response Time Target: < 100ms (F-002 performance criteria)
- * - HTTP Status: 200 (implicit success status)
- * - Content-Type: text/html; charset=utf-8 (automatically set by Express res.send())
- * - Response Body: "Hello world" (exact text as specified)
- * 
- * Annotation note: the two parameters below carry the built-in object type
- * rather than a framework-specific type symbol. Express 5.1.0 publishes no
- * TypeScript declarations, no declaration package for it is a dependency of
- * this project, and none may be added, so a framework type symbol would not
- * resolve for any reader or tool. Both values are objects at runtime.
  *
  * @route GET /
- * @param {object} req - Express request object containing HTTP request data
- * @param {object} res - Express response object for sending HTTP response
- * @returns {void} Terminates the request-response cycle by sending response to client
+ *
+ * Response contract:
+ * - Status 200 with the body exactly "Hello world" (F-002-RQ-002, F-004-RQ-003)
+ * - Content-Type: text/html; charset=utf-8, which res.send derives from a string
+ * - Response Time Target: < 100ms (F-002 performance criteria)
+ *
+ * Only GET is declared (F-002-RQ-001, F-002-RQ-003). Express derives two
+ * further methods from that single declaration: HEAD returns 200 with headers
+ * only, as HTTP semantics require, and OPTIONS returns 200 with an
+ * "Allow: GET, HEAD" header. POST, PUT and DELETE match no route and are
+ * answered by Express's default handler with 404. The derived HEAD behaviour
+ * is depended upon rather than incidental: the container health check probes
+ * this path with a HEAD request (infrastructure/docker/Dockerfile), so HEAD
+ * must not be suppressed.
  */
 router.get('/', (req, res) => {
-    /**
-     * Response Generation Process:
-     * 
-     * 1. Express automatically sets the HTTP status to 200 for successful requests
-     * 2. The res.send() method automatically sets the Content-Type header based on the data type
-     * 3. For string data, Content-Type is set to 'text/html; charset=utf-8' by default
-     * 4. The response body contains the exact "Hello world" text as required
-     * 
-     * Express 5.x Benefits:
-     * - Automatic promise rejection handling (though not needed for this synchronous operation)
-     * - Enhanced security through updated dependencies
-     * - Improved error handling middleware integration
-     */
-    
     // Send the exact "Hello world" response as specified in F-002-RQ-002
     // This fulfills F-004-RQ-003 by delivering the content in the response body
     res.send('Hello world');
-    
-    /**
-     * Response Lifecycle:
-     * 
-     * 1. Request received and parsed by Express middleware stack
-     * 2. Route matching performed using path-to-regexp@8.x (enhanced security)
-     * 3. Handler function executed with req/res objects
-     * 4. res.send() called with "Hello world" string
-     * 5. Express sets appropriate headers and status code
-     * 6. Response sent to client, completing the request-response cycle
-     * 
-     * Performance Characteristics:
-     * - Processing time: < 25ms (handler execution target)
-     * - Memory usage: Minimal (static string response)
-     * - CPU usage: Negligible (no complex processing)
-     */
 });
 
 /**
  * Router Export
- * 
- * Exports the configured Express router as the default export so it can be
- * imported and mounted by the main application router in src/backend/routes/index.js.
- * 
- * Export Type: Default export (CommonJS module.exports)
- * Usage: The route aggregator mounts this router at the /hello path; the
- *   application composition root never imports it directly.
- * 
- * Integration Pattern:
- * - The route aggregator src/backend/routes/index.js imports this router:
- *   const helloRouter = require('./hello.js')
- * - The same aggregator mounts it on itself: router.use('/hello', helloRouter)
- * - src/backend/app.js mounts that aggregator at the application root with
- *   app.use('/', routes), which is what makes the composed path public
- * - Final endpoint accessible at: GET /hello
- * 
- * Architecture Benefits:
- * - Modular route organization following Express.js best practices
- * - Separation of concerns between different API endpoints
- * - Scalable structure for adding additional route handlers
- * - Clear traceability as specified in the implementation matrix
+ *
+ * This router is the default CommonJS export. The route aggregator
+ * src/backend/routes/index.js mounts it at /hello, and src/backend/app.js
+ * mounts that aggregator at '/', which is what makes GET /hello public.
  */
 module.exports = router;
-
-/**
- * File Summary:
- * 
- * This file implements the hello endpoint router for the Node.js tutorial application,
- * demonstrating fundamental Express.js concepts including:
- * 
- * - Router creation and configuration
- * - HTTP GET route definition
- * - Request/response handling
- * - Modular route organization
- * - Modern JavaScript and Express 5.x features
- * 
- * Educational Value:
- * - Shows proper Express router usage patterns
- * - Demonstrates clean separation of route concerns
- * - Illustrates modern Node.js development practices
- * - Provides foundation for building more complex API endpoints
- * 
- * Production Readiness:
- * - Follows Express.js best practices
- * - Implements proper error handling patterns
- * - Uses pinned dependency versions with security improvements
- * - Includes comprehensive documentation for maintainability
- */

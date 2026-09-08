@@ -4,7 +4,7 @@ This is the backend for the Node.js tutorial application, designed as an educati
 
 ## Overview
 
-The backend server is built on Node.js v22.16.0 LTS and Express.js 5.1.0. It implements a single-threaded event-driven architecture optimized for educational clarity while maintaining production-ready patterns.
+The backend server is built on Node.js v22.16.0 LTS and Express.js 5.2.1. It implements a single-threaded event-driven architecture optimized for educational clarity while maintaining production-ready patterns.
 
 ### Educational Objectives
 
@@ -18,7 +18,7 @@ The backend server is built on Node.js v22.16.0 LTS and Express.js 5.1.0. It imp
 
 - **Single `/hello` Endpoint**: Returns a simple "Hello world" message
 - **Event-Driven Architecture**: Leverages Node.js single-threaded event loop design
-- **Promise-Based Error Handling**: Modern error management using Express 5.1.0 features
+- **Promise-Based Error Handling**: Modern error management using Express 5.2.1 features
 - **Educational Structure**: Clear, maintainable code with extensive documentation
 - **Production Patterns**: Demonstrates scalable architecture principles
 
@@ -71,27 +71,42 @@ npm --version
 ### 1. Repository Setup
 
 ```bash
-# Clone the repository
-git clone <repository-url>
+# Clone the repository. Replace the value below with the clone URL your Git
+# host shows for this repository, and REPOSITORY on the first cd line with
+# the directory git creates. The single quotes keep every character of the
+# URL literal, and quoting the expansion passes it to git intact.
+REPOSITORY_URL='https://github.com/OWNER/REPOSITORY.git'
+git clone "$REPOSITORY_URL"
 
-# Navigate to the backend directory
+# Enter the clone, then the backend package directory
+cd REPOSITORY
 cd src/backend
 ```
+
+`git clone` names the new directory after the last path segment of the URL with any `.git` suffix removed, so the URL above produces a directory called `REPOSITORY`. Pass a second argument — `git clone "$REPOSITORY_URL" my-directory` — to choose the name yourself, and `cd` into that instead.
 
 ### 2. Dependency Installation
 
 ```bash
-# Install production dependencies
-npm install
-
-# Runtime dependencies installed:
-# - express@5.1.0 (Web application framework, pinned to an exact version)
-# - dotenv@^16.3.1 (Loads .env into process.env for config/index.js)
-#
-# Both commands also install the development dependencies
-# (jest, nodemon, supertest). Add --omit=dev for a production-only
-# tree, which is what the container image installs.
+# Install dependencies
+npm ci
 ```
+
+`npm ci` installs exactly the tree recorded in `package-lock.json`, which makes every install of this project resolve the same versions with the same integrity digests; it is also the command `.github/workflows/ci.yml` runs. `npm install` is the alternative: it resolves the ranges declared in `package.json` instead and may rewrite `package-lock.json` while doing so, which is what you want when you are deliberately changing a dependency and not what you want when you are setting the project up.
+
+Either command installs the full tree — runtime and development dependencies together:
+
+- **Runtime**: express@5.2.1 (Web application framework, pinned to an exact version) and dotenv@^16.3.1 (Loads .env into process.env for `config/index.js`)
+- **Development**: jest, nodemon and supertest
+
+A production-only tree is a separate command, and it belongs in its own step rather than after the one above:
+
+```bash
+# Production-only tree: what the container image installs
+npm ci --omit=dev
+```
+
+That is the right tree inside the image and the wrong one on your machine: it omits Jest, so `npm test` cannot run. Use it only when you are deliberately building a runtime-only tree, and run `npm ci` again to get the test tooling back.
 
 ### 3. Installation Verification
 
@@ -112,12 +127,40 @@ Development mode uses `nodemon` for automatic server restart when file changes a
 ```bash
 # Start development server with auto-reload
 npm run dev
-
-# Expected output:
-# Server starting...
-# Server listening on port 3000
-# Development mode: Auto-reload enabled
 ```
+
+npm echoes the script it is about to run, `nodemon` prints its own preamble, and then `node server.js` takes over and prints the configuration summary followed by five startup lines:
+
+```text
+> nodejs-tutorial-app-backend@1.0.0 dev
+> nodemon server.js
+
+[nodemon] 3.1.11
+[nodemon] to restart at any time, enter `rs`
+[nodemon] watching path(s): **/*
+[nodemon] watching extensions: js,json
+[nodemon] starting `node server.js`
+📊 Configuration loaded successfully:
+   🚀 App Name: node-tutorial-app
+   🌐 Host: localhost
+   📡 Port: 3000
+   🔧 Environment: development
+   📝 Logging: enabled
+[INFO]: 🚀 HTTP Server successfully started and listening on port 3000
+[INFO]: 🌐 Server is ready to accept HTTP requests
+[INFO]: 📍 Local development URL: http://localhost:3000
+[INFO]: ⚡ Node.js v22.16.0 | Express 5.2.1 | Environment: development
+[INFO]: 🎯 Tutorial application initialized successfully
+```
+
+That block is a capture from a default environment: no `.env` file on disk and none of the variables below set. Several of its values come from your environment rather than from the source, so yours may legitimately differ:
+
+- **`[nodemon] 3.1.11`** — the `nodemon` release actually installed. `npm ci` reproduces the version pinned in `package-lock.json`, which is where 3.1.11 comes from; `npm install` may resolve a newer 3.x, because the manifest declares the range `^3.0.0`.
+- **`Node.js v22.16.0`** — `process.version` for the runtime you launched, interpolated by `server.js`. The block shows the v22.16.0 LTS this document recommends; a different Node build prints its own version here. The `Express 5.2.1` on that same line is a literal in the log statement and does not vary.
+- **`App Name`, `Host`, `Port` and `Environment`** — `config/index.js` reads `APP_NAME`, `HOST`, `PORT` and `NODE_ENV`, falling back to `node-tutorial-app`, `localhost`, `3000` and `development`. Setting any of them changes the matching summary line, and `PORT` also changes every other appearance of `3000` in the block.
+- **Whether the configuration summary appears at all** — `config/index.js` prints those six lines only when two conditions hold together: the environment is `development`, and `ENABLE_LOGGING` is not `false`. Set `ENABLE_LOGGING=false` and the summary disappears while the `[INFO]:` startup lines below it continue unchanged.
+
+Each request served after startup adds one `HTTP Request` line, written by `middleware/requestLogger.js`.
 
 **Development Mode Features:**
 - **Auto-reload**: Automatically restarts server on file changes
@@ -132,12 +175,27 @@ Production mode runs the server using the standard `node` runtime without additi
 ```bash
 # Start production server
 npm start
-
-# Expected output:
-# Server starting...
-# Server listening on port 3000
-# Production mode: Optimized for performance
 ```
+
+`npm start` selects the **runtime** — plain `node`, with no file watcher — and not the **environment**. It leaves `NODE_ENV` unset, and `config/index.js` defaults that to `development`, so a bare `npm start` still prints the configuration summary and the `[INFO]:` prefixes shown in the development block above, under this "Production Mode" heading. What it drops is nodemon: the preamble is gone, and npm echoes `start` and `node server.js` in place of `dev` and `nodemon server.js`. Selecting the production environment is a separate step, and it is done on the command line:
+
+```bash
+# Start production server with the production environment selected
+NODE_ENV=production npm start
+```
+
+```text
+> nodejs-tutorial-app-backend@1.0.0 start
+> node server.js
+
+🚀 HTTP Server successfully started and listening on port 3000
+🌐 Server is ready to accept HTTP requests
+📍 Local development URL: http://localhost:3000
+⚡ Node.js v22.16.0 | Express 5.2.1 | Environment: production
+🎯 Tutorial application initialized successfully
+```
+
+Both differences from the development output are driven by `NODE_ENV` alone: `config/index.js` prints its configuration summary only when the environment is `development`, and `utils/logger.js` adds the `[INFO]:` and `[ERROR]:` prefixes only when `config.nodeEnv === 'development'`. Of the varying values described above, only two appear in this block — the Node version and the port. Nodemon is not involved, and the summary that would have carried `App Name` and `Host` is suppressed here by the environment itself.
 
 **Production Mode Features:**
 - **Optimized Performance**: Minimal overhead for maximum throughput
@@ -261,7 +319,7 @@ src/backend/
 - **`routes/hello.js`**: Implementation of the `/hello` endpoint with proper error handling
 
 **Middleware Components:**
-- **`errorHandler.js`**: Centralized error handling using Express 5.1.0's enhanced promise support
+- **`errorHandler.js`**: Centralized error handling using Express 5.2.1's enhanced promise support
 - **`requestLogger.js`**: HTTP request/response logging for monitoring and debugging
 
 **Support Modules:**
@@ -274,12 +332,12 @@ src/backend/
 
 | Package | Version | Purpose | License |
 |---------|---------|---------|---------|
-| [express](https://www.npmjs.com/package/express) | 5.1.0 | Fast, unopinionated, minimalist web framework for Node.js | MIT |
+| [express](https://www.npmjs.com/package/express) | 5.2.1 | Fast, unopinionated, minimalist web framework for Node.js | MIT |
 | [dotenv](https://www.npmjs.com/package/dotenv) | ^16.3.1 | Loads variables from `.env` into `process.env`; required once by `config/index.js` | BSD-2-Clause |
 
-`express` is declared as an exact version rather than a caret range, so a fresh install resolves the same 5.1.0 that this document, the startup log line and the container image labels all name.
+`express` is declared as an exact version rather than a caret range, so a fresh install resolves the same 5.2.1 that this document, the startup log line and the container image labels all name.
 
-**Express.js 5.1.0 Key Features:**
+**Express.js 5.2.1 Key Features:**
 - **Promise Support**: Middleware can now return rejected promises, caught by the router as errors
 - **Enhanced Security**: Updated to path-to-regexp@8.x, removing sub-expression regex patterns for security reasons
 - **Node.js Compatibility**: Requires Node.js 18 or higher, optimized for v22 LTS
@@ -291,7 +349,7 @@ src/backend/
 |---------|---------|---------|---------|
 | [jest](https://www.npmjs.com/package/jest) | ^29.7.0 | Test runner and coverage reporter, configured by `jest.config.js` | MIT |
 | [nodemon](https://www.npmjs.com/package/nodemon) | ^3.0.0 | Auto-restart development server on file changes | MIT |
-| [supertest](https://www.npmjs.com/package/supertest) | 7.1.1 | Drives HTTP assertions against the Express app in-process | MIT |
+| [supertest](https://www.npmjs.com/package/supertest) | 7.2.2 | Drives HTTP assertions against the Express app in-process | MIT |
 
 `jest` is held on the 29.x line deliberately, and 29.7.0 is not the newest release available. The current major, `jest@30`, publishes an engine range that excludes Node 18.0–18.13, 19, 21 and 23 — every one of which this package's `engines.node` floor of `>=18.0.0` admits — whereas `jest@29.7.0`'s range contains that floor exactly. The 29.x line is the compatible choice, not the latest one.
 
@@ -461,8 +519,11 @@ For production deployments, consider implementing:
 
 **Port Already in Use:**
 ```bash
-# Error: EADDRINUSE: address already in use :::3000
-# Solution: Change port or kill existing process
+# Error: startup fails with "Port 3000 is already in use" and the process
+# exits; server.js reports the underlying EADDRINUSE bind failure this way.
+# Cause: another process is already listening on port 3000.
+# Solution: start this server on a free port instead. The commands below
+# move only this server; whatever holds port 3000 keeps running untouched.
 export PORT=3001
 npm start
 ```
@@ -470,15 +531,23 @@ npm start
 **Module Not Found:**
 ```bash
 # Error: Cannot find module 'express'
-# Solution: Reinstall dependencies
-rm -rf node_modules package-lock.json
-npm install
+# Cause: the installed node_modules tree is missing or incomplete.
+# Solution: delete only the installed tree, then reinstall from the lock file.
+# package-lock.json is the audited dependency graph — the reviewed versions
+# and their integrity digests — and it is deliberately NOT deleted here:
+# npm ci requires it, and deleting it would resolve a fresh, unreviewed graph.
+rm -rf node_modules
+npm ci
 ```
+
+Regenerating `package-lock.json` is a separate, deliberate act that belongs with an intentional change to `package.json`, and it is followed by re-running `npm audit` and `npm test` so the new graph is reviewed before it is relied on. It is never part of recovering from a missing module.
 
 **Permission Denied:**
 ```bash
 # Error: EACCES: permission denied
-# Solution: Use different port or run with appropriate permissions
+# Cause: ports below 1024 are privileged, and binding one needs privileges
+# this server neither has nor needs.
+# Solution: choose a port at or above 1024.
 export PORT=8080
 npm start
 ```
@@ -533,17 +602,33 @@ For production deployment, consider:
 
 **Containerization:**
 
-The repository ships its own image definition at `infrastructure/docker/Dockerfile`: a two-stage build on `node:22-alpine` that installs into `/usr/src/app`, copies the manifests from the builder stage, runs as a non-root user and declares a `HEALTHCHECK` against `/hello`. The snippet below is a deliberately simplified single-stage illustration of the pattern, not an excerpt of that file:
+The repository ships its own image definition at `infrastructure/docker/Dockerfile`, and that tracked file is the one to build — there is no simplified variant to copy from here. It is a two-stage build on `node:22-alpine` that installs into `/usr/src/app`. The builder stage reads `package.json` and `package-lock.json` from `src/backend/` and installs the full tree with `npm ci --include=dev`. The runtime stage installs a production-only tree with `npm ci --omit=dev` and then takes the application sources from the filtered build context rather than from the builder, so the builder's development dependencies never reach the image. The container runs as a non-root user with UID 1001, declares a `HEALTHCHECK` that issues `HEAD /hello`, and starts with `CMD ["npm", "start"]`.
 
-```dockerfile
-FROM node:22-alpine
-WORKDIR /app
-COPY package*.json ./
-RUN npm ci --only=production
-COPY . .
-EXPOSE 3000
-CMD ["npm", "start"]
+Build and run it from the repository root:
+
+```bash
+# Build the image. Run this from the repository ROOT, not from src/backend.
+docker build -t nodejs-tutorial-app -f infrastructure/docker/Dockerfile .
+
+# Run the image. This holds the terminal until you stop it with Ctrl-C.
+docker run --rm -p 3000:3000 nodejs-tutorial-app
 ```
+
+Then, from a second terminal, verify the endpoint:
+
+```bash
+curl http://localhost:3000/hello
+```
+
+The trailing `.` is the build context, and it has to be the repository root. The Dockerfile reads the dependency manifests from `src/backend/`, a path that resolves only against the root. More importantly, Docker looks for the ignore file at `<context>/.dockerignore` — not in the directory the Dockerfile happens to sit in — so the repository-root `.dockerignore` is what keeps every `node_modules` tree, `src/backend/tests`, the environment files and the coverage report out of both stages, while the older `infrastructure/docker/.dockerignore` sits below both context roots and is loaded by no build path at all.
+
+One file does outrank the context root, and it is worth knowing about precisely because nothing would warn you: a Dockerfile-specific ignore file named `<dockerfile-path>.dockerignore` — here that would be `infrastructure/docker/Dockerfile.dockerignore` — takes precedence when it exists, and precedence means replacement rather than merge, so it would switch off every root exclusion at once and no build would report that it had happened. None exists in this repository, and none should be created.
+
+Two things follow from that, and they are worth keeping apart, because only one of them is dangerous.
+
+The command above is written with relative paths, so it has to be run at the repository root. Run it from `src/backend` and it fails immediately with `lstat infrastructure: no such file or directory` — it does not quietly build something worse. What matters is the context the final argument names, not the directory you happen to be standing in, so an equivalent command issued from anywhere else is perfectly fine as long as it still selects the repository root: an absolute `-f …/infrastructure/docker/Dockerfile` with that root as the context argument builds exactly the same image.
+
+The dangerous case is the other one: an ad-hoc Dockerfile that copies the working tree unfiltered. That drops a local development dependency tree on top of the production-only install and bakes local configuration into an image layer. It is what the deleted snippet did, and it is why there is no simplified variant to copy from this document.
 
 **Process Management:**
 ```bash
@@ -582,4 +667,4 @@ For questions, issues, or contributions:
 
 **License**: ISC, as declared by the `license` field in `src/backend/package.json`. This tutorial project is provided for educational purposes.
 
-**Last Updated**: December 2024 | **Node.js Version**: v22.16.0 LTS | **Express Version**: 5.1.0
+**Last Updated**: December 2024 | **Node.js Version**: v22.16.0 LTS | **Express Version**: 5.2.1
