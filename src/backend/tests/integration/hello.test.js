@@ -386,8 +386,8 @@ describe('Hello API Endpoint', () => {
      * Future test cases that could be added to enhance coverage:
      * 
      * 1. HTTP Method Validation:
-     *    - Test POST, PUT, DELETE methods to /hello (should return 405 Method Not Allowed)
-     *    - Validate that only GET method is supported for the endpoint
+     *    - Test POST, PUT, DELETE methods to /hello (should return 404 Not Found)
+     *    - Validate that GET is the only declared method, while HEAD and OPTIONS return 200
      * 
      * 2. Request Header Handling:
      *    - Test various Accept headers and content negotiation

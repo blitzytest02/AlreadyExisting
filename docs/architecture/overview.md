@@ -72,7 +72,7 @@ The HTTP Server component serves as the foundational entry point of the applicat
 
 ### 2.2. Express Application (`app.js`)
 
-The Express Application component orchestrates the web framework functionality using Express.js 5.1.0, the latest stable release published within the last two months. This component provides the middleware architecture, routing capabilities, and request/response processing pipeline essential for HTTP request handling.
+The Express Application component orchestrates the web framework functionality using Express.js 5.1.0. This component provides the middleware architecture, routing capabilities, and request/response processing pipeline essential for HTTP request handling.
 
 **Core Functionality:**
 - **Middleware Stack Management**: Sequential request processing through configurable middleware pipeline
@@ -93,10 +93,10 @@ Express 5.1.0 introduces significant improvements including middleware that can 
 The Hello Route Handler implements the core business logic for the `/hello` endpoint, demonstrating fundamental HTTP endpoint implementation patterns and response generation techniques. This component represents the simplest possible RESTful API endpoint while maintaining production-ready code quality.
 
 **Implementation Specifications:**
-- **Route Pattern**: `/hello` with exact path matching and case-sensitive route handling
-- **HTTP Method Support**: GET method only, with proper 405 Method Not Allowed responses for other methods
+- **Route Pattern**: `/hello`, matched using the default Express router behavior — matching is case-insensitive and non-strict, so trailing slashes are ignored and `/HELLO` and `/hello/` reach the same handler as `/hello`; no routing option is changed by this application
+- **HTTP Method Support**: `GET` is the only declared method. Express derives two further behaviors from that single declaration: `HEAD` returns `200` with the same headers and no body, and `OPTIONS` returns `200` with `Allow: GET, HEAD`. `POST`, `PUT`, `DELETE` and any other unmatched method are answered with `404 Not Found` by Express's default handler
 - **Response Format**: Plain text content with "Hello world" static response
-- **Content-Type Header**: Properly set text/plain header for client content type negotiation
+- **Content-Type Header**: `text/html; charset=utf-8`, derived by `res.send('Hello world')` — Express infers the status code, `Content-Type` and `Content-Length` (11 bytes) from the string body rather than the handler setting the header explicitly
 
 **Business Logic Pattern:**
 The handler follows a stateless design pattern where each request is processed independently without maintaining session state or persistent data. This approach demonstrates scalable API design principles while keeping the implementation simple for educational purposes.
@@ -167,20 +167,18 @@ The system maintains a stateless design where no persistent data is stored betwe
 
 ### 4.1. Logging
 
-The application implements a structured logging strategy using built-in Node.js console methods enhanced with request correlation and timing information. Logging is implemented as middleware to provide consistent request tracking and debugging capabilities.
+The application implements a lightweight logging strategy built on the built-in Node.js `console` methods, wrapped by a small logger utility, and request logging is implemented as middleware so that every incoming request is recorded consistently for debugging purposes. The logger writes synchronously: `logger.info` delegates directly to `console.log`, prefixing the line with `[INFO]:` only when `NODE_ENV` is `development`.
 
 **Logging Implementation:**
-- **Request Logging**: Each incoming HTTP request is logged with timestamp, method, path, and client information
-- **Response Logging**: Response status codes and processing times are captured for performance monitoring
-- **Error Logging**: Errors are logged with full stack traces and contextual information for debugging
-- **Performance Logging**: Response time measurements help identify performance bottlenecks and optimization opportunities
+- **Request Logging**: Each incoming HTTP request is logged with exactly three fields — the HTTP method, the request path, and the normalized request body, which is rendered as `{}` when no body is present
+- **Error Logging**: The error-handling middleware logs unhandled errors to the error stream with the error message, stack, and name, plus request context (URL, method, headers, route parameters, and query), an ISO timestamp, the User-Agent, and the client IP address
 
 **Log Format Structure:**
 ```
-[timestamp] level method path status responseTime clientIP
+[INFO]: HTTP Request - Method: GET Path: /hello Body: {}
 ```
 
-This structured format enables easy parsing for log analysis tools while remaining human-readable for development environments.
+Outside development the identical line is emitted without the `[INFO]: ` prefix, since the prefix is applied only when `NODE_ENV` is `development`. This is a single human-readable console line rather than a machine-structured format: it carries no JSON, no fixed field positions, and no level, status, latency, or timestamp fields. It stays easy to filter during development because the fixed `HTTP Request -` prefix and the `Method:`, `Path:`, and `Body:` labels are greppable.
 
 ### 4.2. Error Handling
 
@@ -193,8 +191,7 @@ The application implements a comprehensive error handling strategy leveraging Ex
 - **Error Information Security**: Generic error messages sent to clients while detailed errors are logged internally
 
 **Error Response Categories:**
-- **404 Not Found**: For requests to non-existent routes with helpful error messages
-- **405 Method Not Allowed**: For unsupported HTTP methods on existing routes
+- **404 Not Found**: For requests to non-existent routes and, equally, for unsupported HTTP methods on `/hello` — Express's default handler answers both cases with an HTML error page (`text/html; charset=utf-8`) whose body names the attempted method and path, such as `Cannot POST /hello`
 - **500 Internal Server Error**: For application errors with generic error messages to prevent information disclosure
 
 ### 4.3. Configuration

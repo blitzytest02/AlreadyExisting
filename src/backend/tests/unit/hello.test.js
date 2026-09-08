@@ -1,4 +1,4 @@
-// Jest Testing Framework - Latest version for unit testing Node.js applications
+// Jest Testing Framework - v29.7.0 for unit testing Node.js applications
 // Supertest v7.1.1 - HTTP server testing library for making assertions against Express applications
 const request = require('supertest'); // v7.1.1
 
@@ -180,9 +180,9 @@ describe('/hello endpoint', () => {
      * would provide comprehensive coverage of edge cases and advanced scenarios:
      * 
      * HTTP Method Validation:
-     * - POST, PUT, DELETE requests to /hello should return 405 Method Not Allowed
-     * - OPTIONS requests should return appropriate CORS headers
-     * - HEAD requests should return headers without response body
+     * - POST, PUT, DELETE requests to /hello should return 404, as only GET is declared
+     * - OPTIONS /hello is already served: 200 with an `Allow: GET, HEAD` header
+     * - HEAD /hello is already served: 200, derived by Express from the GET declaration
      * 
      * Performance Testing:
      * - Response time validation under load conditions
@@ -206,10 +206,10 @@ describe('/hello endpoint', () => {
      * 
      * Example Future Test Cases:
      * 
-     * it('should return 405 for POST requests to /hello', async () => {
+     * it('should return 404 for POST requests to /hello', async () => {
      *     await request(app)
      *         .post('/hello')
-     *         .expect(405);
+     *         .expect(404);
      * });
      * 
      * it('should respond within 100ms performance target', async () => {
