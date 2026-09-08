@@ -48,7 +48,7 @@ Follow these step-by-step instructions to set up your local development environm
 
 ### Prerequisites
 
-- **Node.js v22.16.0 LTS** - This tutorial uses the latest Long Term Support version with codename 'Jod'
+- **Node.js v22.16.0 LTS** - This tutorial uses the Long Term Support release with codename 'Jod'
 - **npm** - Comes bundled with Node.js (version 11.4.1 or later)
 - **Git** - For version control
 
@@ -118,11 +118,8 @@ Before submitting a pull request, please ensure you follow these guidelines:
 5. **Code quality standards**
    - Ensure your code adheres to the linting rules defined in `.eslintrc.js`
    - Follow formatting rules specified in `.prettierrc`
-   - Run the following commands to check your code:
-     ```bash
-     npm run lint
-     npm run format
-     ```
+   - Between them these two files codify the project's style standard: two-space indentation (`tabWidth: 2` in `.prettierrc`, `indent: ['error', 2, ...]` in `.eslintrc.js`), single quotes (`singleQuote: true` / `quotes: ['error', 'single', ...]`), mandatory semicolons (`semi: true` / `semi: ['error', 'always']`), and an 80-column line width (`printWidth: 80`)
+   - ESLint and Prettier are deliberately not declared as dependencies of this project, and neither are the `security`, `node` and `jsdoc` plugins that `.eslintrc.js` references, so the standard is followed by convention rather than enforced by a command. Read both configuration files and match your changes to them by hand before submitting
 
 ### Submission Process
 
@@ -192,11 +189,13 @@ All contributions must include appropriate testing:
 
 ### Running Tests
 
+Coverage is not opt-in: `jest.config.js` sets `collectCoverage: true`, so every run collects coverage and applies the 90% threshold above. Plain `npm test` is therefore the gate, and it is the same command the CI pipeline runs; `test:coverage` is a convenience for writing the report on demand.
+
 ```bash
-# Run all tests
+# Run all tests, with coverage collected and the 90% threshold enforced
 npm test
 
-# Run tests with coverage
+# Run the same suite and write the coverage report explicitly
 npm run test:coverage
 
 # Run tests in watch mode during development
@@ -224,7 +223,7 @@ If you discover a security vulnerability:
 
 ## License
 
-By contributing to this project, you agree that your contributions will be licensed under the same license as the project. See the `LICENSE` file in the repository root for complete license terms.
+By contributing to this project, you agree that your contributions will be licensed under the same license as the project. The project's license is ISC, as declared by the `license` field in `src/backend/package.json`.
 
 Your contributions help make Node.js more accessible to developers worldwide. Thank you for being part of our learning community!
 

@@ -24,7 +24,7 @@ Before you begin, ensure you have the following software installed on your syste
 #### Node.js (Required)
 - **Version**: Node.js v22.16.0 LTS or higher
 - **Minimum**: Node.js v18.0.0 (Express.js 5.1.0 requirement)
-- **Justification**: Node.js v22 with codename 'Jod' has officially moved into Active LTS phase, ensuring critical updates and security support for years to come
+- **Justification**: Node.js v22, codename 'Jod', is the release line this project targets, builds against in CI and is tested on
 
 **Installation Verification:**
 ```bash
@@ -181,17 +181,20 @@ cd src/backend
 Examine the `package.json` file to understand the dependencies that will be installed:
 
 **Core Dependencies (Production):**
-- `express: ^5.1.0` - Web application framework with latest features
+- `express: 5.1.0` - Web application framework (exact version pin)
 - `dotenv: ^16.3.1` - Environment variable management
 
 **Development Dependencies:**
 - `nodemon: ^3.0.0` - Automatic server restart during development
 - `supertest: 7.1.1` - HTTP testing library for integration tests
+- `jest: ^29.7.0` - Test runner for the unit and integration suites
 
 **Package.json Scripts:**
 - `start: "node server.js"` - Production server startup
 - `dev: "nodemon server.js"` - Development server with auto-reload
-- `test: "echo \"No tests specified\""` - Test command placeholder
+- `test: "jest"` - Runs the unit and integration suites, with coverage collected on every run
+- `test:coverage: "jest --coverage"` - Runs the suites and writes a coverage report
+- `test:watch: "jest --watch"` - Re-runs affected suites as files change
 
 #### Step 3: Install Dependencies
 
@@ -225,9 +228,10 @@ npm audit
 **Expected Output:**
 ```
 nodejs-tutorial-app-backend@1.0.0
+├── dotenv@16.6.1
 ├── express@5.1.0
-├── dotenv@16.3.1
-├── nodemon@3.0.0
+├── jest@29.7.0
+├── nodemon@3.1.14
 └── supertest@7.1.1
 ```
 
@@ -364,11 +368,17 @@ npm start
 
 **Expected Console Output:**
 ```
-🚀 HTTP Server successfully started and listening on port 3000
-🌐 Server is ready to accept HTTP requests
-📍 Local development URL: http://localhost:3000
-⚡ Node.js v22.16.0 | Express 5.1.0 | Environment: development
-🎯 Tutorial application initialized successfully
+📊 Configuration loaded successfully:
+   🚀 App Name: node-tutorial-app
+   🌐 Host: localhost
+   📡 Port: 3000
+   🔧 Environment: development
+   📝 Logging: enabled
+[INFO]: 🚀 HTTP Server successfully started and listening on port 3000
+[INFO]: 🌐 Server is ready to accept HTTP requests
+[INFO]: 📍 Local development URL: http://localhost:3000
+[INFO]: ⚡ Node.js v22.16.0 | Express 5.1.0 | Environment: development
+[INFO]: 🎯 Tutorial application initialized successfully
 ```
 
 **Process Details:**
@@ -397,7 +407,6 @@ npm run dev
 **Monitored File Types:**
 - `.js` files (JavaScript source)
 - `.json` files (Configuration files)
-- `.env` files (Environment variables)
 
 ### 4.3 Direct Node.js Execution
 
@@ -476,7 +485,7 @@ curl -v http://localhost:3000/hello
 # > GET /hello HTTP/1.1
 # > Host: localhost:3000
 # < HTTP/1.1 200 OK
-# < Content-Type: text/plain; charset=utf-8
+# < Content-Type: text/html; charset=utf-8
 # Hello world
 ```
 
@@ -498,7 +507,7 @@ http GET localhost:3000/hello
 
 # Expected output:
 # HTTP/1.1 200 OK
-# Content-Type: text/plain; charset=utf-8
+# Content-Type: text/html; charset=utf-8
 # Hello world
 ```
 
@@ -743,7 +752,7 @@ npm run dev
 #### Development Server Features
 
 **Auto-Reload Capability:**
-- Watches for file changes in `.js`, `.json`, `.env` files
+- Watches for file changes in `.js` and `.json` files
 - Automatically restarts server on changes
 - Maintains console history and logs
 - Preserves environment variables across restarts
@@ -766,12 +775,16 @@ npm run dev
 
 #### File Watching Configuration
 
-Nodemon monitors these file types by default:
+The committed `nodemon.json` sets which files are watched:
 ```json
 {
-  "ext": "js,json,env",
-  "ignore": ["node_modules/", ".git/"],
-  "delay": "1000ms"
+  "watch": ["./"],
+  "ext": "js,json",
+  "ignore": [
+    "tests/",
+    "node_modules/",
+    "package-lock.json"
+  ]
 }
 ```
 
@@ -798,10 +811,7 @@ time curl http://localhost:3000/hello
 For more comprehensive testing:
 
 ```bash
-# Install testing dependencies (if not already installed)
-npm install --save-dev jest supertest
-
-# Run basic tests (when implemented)
+# Run the test suites
 npm test
 
 # Watch mode for continuous testing
@@ -1236,21 +1246,30 @@ require('dotenv').config({
 
 #### Nodemon Custom Configuration
 
-Create `nodemon.json` in the backend directory:
+`nodemon.json` already exists in the backend directory and is committed with the
+project. This is its contents:
 
 ```json
 {
-  "watch": ["src", "config"],
-  "ext": "js,json,env",
-  "ignore": ["node_modules", "logs", "*.test.js"],
-  "delay": "1000",
-  "env": {
-    "NODE_ENV": "development"
-  },
-  "verbose": true,
-  "restartable": "rs"
+  "watch": ["./"],
+  "ext": "js,json",
+  "ignore": [
+    "tests/",
+    "node_modules/",
+    "package-lock.json"
+  ]
 }
 ```
+
+Paths are resolved relative to `src/backend`, because that is the directory
+`npm run dev` runs in. There is deliberately no `exec` key: nodemon derives the
+command from the script argument in `package.json` (`nodemon server.js`), so the
+entry point is named in one place rather than two that have to agree.
+
+Nodemon supports further keys you may add to this file if you want them, such as
+`delay` to debounce rapid successive changes, `verbose` for detailed restart
+output, `restartable` to set a manual restart command, and `env` to inject
+environment variables. None of them is part of the committed configuration.
 
 #### Custom npm Scripts
 
@@ -1496,12 +1515,21 @@ npm install joi express-validator helmet
 
 #### Add Testing Framework
 
-Implement comprehensive testing:
+Jest and Supertest are already declared as development dependencies and are
+installed by `npm ci`, and the committed suites run under a 90% coverage gate.
+Extend that coverage as the application grows:
 
 ```bash
-# Install testing dependencies
-npm install --save-dev jest supertest @types/jest
+# Run the existing suites with a coverage report
+npm run test:coverage
+
+# Re-run continuously while adding cases
+npm run test:watch
 ```
+
+Add unit cases alongside each new route or middleware module you introduce, and
+deepen the assertions in the existing suites so they check response values
+rather than only status codes.
 
 ### 10.2 Production Deployment Preparation
 
