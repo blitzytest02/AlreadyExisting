@@ -16,7 +16,12 @@ const app = require('../../app.js');
  * 
  * Test Architecture:
  * - Jest provides the testing framework with describe/it structure
- * - Supertest creates HTTP requests without starting a live server
+ * - Supertest drives the exported app through an HTTP server it creates
+ *   itself: it wraps the app with http.createServer, binds that server to an
+ *   OS-assigned ephemeral port, then closes it as request handling completes
+ *   and runs the queued .expect() assertions from that close callback. A real
+ *   server and a real port are involved; what this suite avoids is having to
+ *   start or manage one on a fixed port
  * - Express app instance is tested directly through Supertest integration
  * - Tests verify both successful responses and error conditions
  * 
@@ -43,7 +48,7 @@ describe('/hello endpoint', () => {
      * 1. Send HTTP GET request to /hello endpoint
      * 2. Verify response status code is 200 (OK)
      * 3. Verify response body contains exact text "Hello world"
-     * 4. Ensure response is generated within performance targets
+     * 4. Re-check that same status and body on the resolved response object
      * 
      * Requirements Validation:
      * - F-002-RQ-001: Route handler responds to /hello path
@@ -53,19 +58,28 @@ describe('/hello endpoint', () => {
      * 
      * Testing Implementation:
      * - Uses Supertest's request() function with Express app instance
-     * - Performs HTTP GET request without starting live server
+     * - Issues the GET request against the ephemeral-port server Supertest
+     *   creates and closes for it, rather than a fixed-port server this
+     *   suite would have to start and stop itself
      * - Validates status code using .expect(200) assertion
      * - Validates response content using .expect('Hello world') assertion
      * 
-     * Performance Validation:
-     * - Response time should be < 100ms as per F-002 performance criteria
-     * - Memory usage should remain minimal during request processing
-     * - No resource leaks or hanging connections
+     * Not Asserted By This Case:
+     * - Response time. No timing assertion is made, and Supertest 7.1.1
+     *   leaves response.duration undefined, so latency cannot be asserted
+     *   from the response object at all. F-002's < 100ms target is measured
+     *   out of band instead (see the curl timing loop in
+     *   docs/setup/development.md)
+     * - Memory usage, resource leaks and connection lifetime. Nothing here
+     *   observes them; they are listed as future work at the end of this
+     *   describe() block
      */
     it('should return \'Hello world\' and a 200 status code', async () => {
         // Execute HTTP GET request to /hello endpoint using Supertest
-        // Supertest creates a temporary server instance for testing without
-        // requiring manual server startup or port management
+        // Supertest builds its own HTTP server around the app, binds it to an
+        // OS-assigned ephemeral port and closes it as the request completes -
+        // the .expect() assertions below run from that close callback - so no
+        // server startup or port management happens in this suite
         const response = await request(app)
             .get('/hello')                    // Send GET request to /hello path
             .expect(200)                      // Assert HTTP status code is 200 (OK)
@@ -74,9 +88,9 @@ describe('/hello endpoint', () => {
         /**
          * Additional Response Validation:
          * 
-         * While the .expect() methods handle the primary assertions, additional
-         * validations can be performed on the response object to ensure
-         * comprehensive testing coverage and implementation compliance.
+         * While the .expect() methods handle the primary assertions, the
+         * resolved response object can also be inspected directly, which is
+         * what the three expect() calls below do for status and body.
          * 
          * Response Object Properties:
          * - response.status: HTTP status code (validated above)
@@ -101,38 +115,39 @@ describe('/hello endpoint', () => {
      * Error Response Test Case - 404 Not Found
      * 
      * Tests that a GET request to a non-existent route returns an HTTP 404
-     * status code, demonstrating proper error handling for invalid endpoints.
-     * This test ensures the application correctly handles requests to routes
-     * that don't exist in the routing configuration.
+     * status code. That 404 is Express's own default answer for a path no
+     * router matched, so this case records the framework behaviour a client
+     * sees when it asks for a route this application does not declare.
      * 
      * Test Scenario:
      * 1. Send HTTP GET request to non-existent endpoint
      * 2. Verify response status code is 404 (Not Found)
-     * 3. Ensure error response is generated within performance targets
-     * 4. Validate that error doesn't crash the application
+     * 3. Re-check that same status on the resolved response object
      * 
-     * Error Handling Validation:
-     * - Express.js default 404 handling for unmatched routes
-     * - Application remains stable after error responses
-     * - Error responses don't expose sensitive implementation details
-     * - Proper HTTP status code semantics for client applications
+     * What Produces This 404:
+     * - Express's built-in final handler, which runs when the aggregated
+     *   router matches no route for the requested method and path
+     * - NOT middleware/errorHandler.js. That handler takes four arguments,
+     *   and Express routes to a four-argument handler only when an error is
+     *   thrown or passed to next(). An unmatched path is not an error, so
+     *   this case never reaches it - measured: zero invocations
+     * - The default body is an HTML page reading "Cannot GET /nonexistent",
+     *   which echoes the request method and path back to the caller
      * 
-     * Security Considerations:
-     * - Error responses don't reveal internal application structure
-     * - No stack traces or debugging information exposed to clients
-     * - Generic error messages prevent information disclosure attacks
-     * - Application continues normal operation after error responses
+     * What This Case Asserts:
+     * - The status code, and nothing else. The response body and headers are
+     *   not inspected, so no property of the error payload is verified here
      * 
      * Testing Implementation:
      * - Uses descriptive non-existent route path for clear test intent
-     * - Validates only status code as error message format may vary
-     * - Ensures error handling middleware functions correctly
-     * - Verifies Express.js default error handling behavior
+     * - Validates only the status code, because the body is framework output
+     *   rather than an application contract this project defines
      */
     it('should return a 404 status code for non-existent routes', async () => {
         // Execute HTTP GET request to deliberately non-existent endpoint
-        // This tests the application's error handling for invalid routes
-        // and ensures proper HTTP status code responses for client applications
+        // This exercises Express's default handling of an unmatched path,
+        // not this application's own error middleware, and checks the status
+        // code a client receives for a route that is not declared
         const response = await request(app)
             .get('/nonexistent')              // Send GET request to non-existent path
             .expect(404);                     // Assert HTTP status code is 404 (Not Found)
@@ -140,36 +155,37 @@ describe('/hello endpoint', () => {
         /**
          * Error Response Analysis:
          * 
-         * Express.js automatically handles requests to non-existent routes by
-         * generating 404 responses. This test validates that:
+         * Express answers a request that matched no route with its own
+         * default 404 response. The assertion below covers one property of
+         * that response:
          * 
-         * 1. Application doesn't crash when handling invalid routes
-         * 2. Proper HTTP status semantics are maintained
-         * 3. Error handling middleware functions correctly
-         * 4. Client applications receive appropriate error indicators
+         * 1. The status code is 404, so a client can tell an undeclared path
+         *    from a served one
          * 
-         * Expected Behavior:
-         * - HTTP 404 status code indicates resource not found
-         * - Response body may contain default Express error message
-         * - Application continues normal operation after error
-         * - No sensitive information disclosed in error response
+         * Left unasserted, and therefore unproven by this case:
+         * - Continued stability. No further request is made after the 404,
+         *   so the suite does not demonstrate that the process keeps serving
+         * - The response body, which carries Express's default HTML page
+         * - The application's own four-argument error handler, which an
+         *   unmatched path does not invoke
          */
         
-        // Validate that error response was properly generated
-        // This ensures the application's error handling mechanisms work correctly
+        // Re-check the status on the resolved response object; this confirms
+        // the framework's default 404 was received, and asserts nothing about
+        // the application's own error-handling middleware
         expect(response).toBeDefined();
         expect(response.status).toBe(404);
         
         /**
-         * Additional Error Validation:
+         * Beyond This Assertion:
          * 
-         * While 404 responses are expected for non-existent routes, it's
-         * important to ensure the application maintains stability and security:
-         * 
-         * - Application doesn't crash or become unresponsive
-         * - Error responses don't expose internal implementation details
-         * - Logging and monitoring systems capture error events appropriately
-         * - Request-response cycle completes properly even for errors
+         * Stability after an error, control over what an error body
+         * discloses, and capture of error events by logging or monitoring
+         * are all properties this suite does not assert. requestLogger does
+         * emit one record for the unmatched request before routing, but no
+         * assertion here inspects it. Treat each of them as future coverage,
+         * listed in the expansion block below, rather than as verified
+         * behaviour of this application.
          */
     });
 
@@ -236,11 +252,15 @@ describe('/hello endpoint', () => {
  * Jest Configuration:
  * - Test environment: Node.js (appropriate for server-side testing)
  * - Test pattern: *.test.js files in tests/ directory
- * - Coverage collection: Enabled with --coverage flag
+ * - Coverage collection: always on. jest.config.js sets
+ *   collectCoverage: true, so every `npm test` run collects coverage and
+ *   applies the 90% global threshold. `npm run test:coverage` adds the
+ *   --coverage flag, which re-requests what the config already enables
  * - Assertion library: Built-in Jest matchers with Supertest extensions
  * 
  * Supertest Integration:
- * - No live server required for testing Express applications
+ * - No separately managed server is required: Supertest starts and stops its
+ *   own ephemeral-port HTTP server around the app for each request
  * - Automatic request/response cycle management
  * - Built-in assertion methods for HTTP-specific validations
  * - Support for async/await patterns with modern JavaScript
@@ -248,20 +268,23 @@ describe('/hello endpoint', () => {
  * Test Isolation:
  * - Each test case runs independently without shared state
  * - No database setup/teardown required for current application scope
- * - Express application instance is imported fresh for each test run
+ * - Jest gives each test file its own module registry, so the app is built
+ *   once per file rather than shared between files
  * - No external dependencies or services required for test execution
  * 
- * Performance Considerations:
- * - Tests execute rapidly without network overhead
- * - No port binding or server startup delays
- * - Minimal memory footprint for test execution
+ * Execution Characteristics:
+ * - Requests travel over a loopback connection to the server Supertest
+ *   created, so no external network hop is involved - but a real bind on an
+ *   OS-assigned port and a real HTTP round trip are
+ * - Neither execution time nor memory footprint is measured by this suite
  * - Parallel test execution supported by Jest framework
  * 
  * Error Handling:
  * - Test failures provide clear error messages and stack traces
  * - Async test errors are properly caught and reported
  * - Application errors don't affect test runner stability
- * - Comprehensive error scenario coverage for robust testing
+ * - Error-scenario coverage extends only as far as the single
+ *   unmatched-route 404 case above
  * 
  * Maintenance and Documentation:
  * - Clear test descriptions explain the purpose and scope of each test
@@ -273,17 +296,25 @@ describe('/hello endpoint', () => {
 /**
  * File Summary:
  * 
- * This test file implements comprehensive unit testing for the `/hello` endpoint
- * using Jest testing framework and Supertest library. The tests validate both
- * successful request handling and error scenarios, ensuring the application
- * meets its functional requirements and performance targets.
+ * This file holds two unit test cases for the `/hello` endpoint, written with
+ * the Jest testing framework and driven through the Supertest library:
+ *
+ * 1. GET /hello returns status 200 with the body exactly "Hello world"
+ * 2. GET /nonexistent returns status 404, Express's default answer for a
+ *    path no router matched
+ *
+ * Those two cases are the whole of the executable coverage in this file.
+ * Other HTTP methods, response headers, timing, memory, security properties
+ * and custom 500-status errors are listed as future work in the expansion
+ * block above and are asserted nowhere here.
  * 
  * Key Testing Features:
- * - HTTP endpoint testing without live server requirements
- * - Status code and response content validation
- * - Error handling verification for non-existent routes
+ * - HTTP endpoint testing against a server Supertest starts and stops
+ *   itself, so no fixed port has to be reserved for the suite
+ * - Status code and response content validation for the served route
+ * - Status code validation for an unmatched route
  * - Async/await patterns for modern JavaScript testing
- * - Comprehensive documentation for educational purposes
+ * - Detailed documentation for educational purposes
  * 
  * Requirements Compliance:
  * - TC-003: API Endpoint Test ✓ (Validates /hello endpoint functionality)
@@ -293,13 +324,13 @@ describe('/hello endpoint', () => {
  * Educational Value:
  * - Demonstrates proper unit testing patterns for Node.js applications
  * - Shows HTTP testing best practices with Supertest library
- * - Illustrates error handling validation techniques
+ * - Illustrates how the framework itself answers an unmatched route
  * - Provides foundation for building comprehensive test suites
  * 
- * Production Readiness:
- * - Follows testing best practices and industry standards
- * - Implements proper test isolation and independence
- * - Includes comprehensive error scenario coverage
- * - Provides maintainable and well-documented test code
+ * Scope Of These Tests:
+ * - Two cases: status and body for /hello, status only for an unknown path
+ * - Test isolation with no shared state, fixtures or external services
+ * - No performance, security or custom-error coverage; those remain future
+ *   work rather than delivered verification
  * - Establishes patterns for scaling test coverage as application grows
  */

@@ -14,7 +14,9 @@ const helloRouter = require('./hello.js');
  * 
  * Architectural Benefits:
  * - Modular Design: Each endpoint group has its own dedicated router module
- * - Scalability: Easy to add new route modules without modifying existing code
+ * - Additive growth: adding an endpoint group means editing this aggregator to
+ *   require and mount the new module. What stays untouched is the set of
+ *   existing route modules and the composition root that mounts this router
  * - Maintainability: Clear separation between routing configuration and business logic
  * - Testability: Individual route modules can be tested in isolation
  * 
@@ -69,16 +71,26 @@ const router = express.Router();
 /**
  * Hello Endpoint Router Mounting
  * 
- * Mounts the hello endpoint router on the '/hello' base path. This configuration
- * means that any HTTP request with a path starting with '/hello' will be
- * forwarded to and handled by the helloRouter module.
+ * Mounts the hello endpoint router on the '/hello' base path. The mount matches
+ * the path '/hello' itself and its slash-delimited descendants only: the
+ * character following the prefix must be absent or '/'. GET /hello and
+ * GET /hello/test both reach helloRouter, while GET /helloworld and
+ * GET /hello-world never match this layer. Only GET /hello answers 200 today:
+ * /hello/test is delegated here but matches no route inside helloRouter, which
+ * declares only '/', and the two non-matching paths are not delegated at all,
+ * so all three answer 404.
  * 
  * Route Delegation Process:
- * 1. Main router receives request with path starting with '/hello'
- * 2. Path matching occurs using Express's path-to-regexp@8.x engine
- * 3. Request is delegated to helloRouter with remaining path
+ * 1. This router walks its own layer stack looking for a prefix match
+ * 2. The prefix is matched with the Express router defaults recorded above,
+ *    and the compiled pattern asserts the '/'-or-end boundary, which is what
+ *    excludes paths such as /helloworld
+ * 3. The matched prefix is trimmed off before delegation: helloRouter runs
+ *    with req.baseUrl set to '/hello' and req.url set to the remainder ('/'
+ *    for both /hello and /hello/, '/test' for /hello/test)
  * 4. helloRouter processes the request using its internal route definitions
- * 5. Response is generated and sent back through the main router
+ * 5. The matched handler writes the response itself with res.send(); this
+ *    router performs no further work after delegating
  * 
  * URL Mapping Examples:
  * - GET /hello → Handled by helloRouter's '/' route
@@ -101,10 +113,15 @@ const router = express.Router();
  * - Router-level errors are propagated to application error handlers
  * 
  * Performance Characteristics:
- * - O(1) route lookup time due to path-to-regexp optimization
- * - Minimal memory overhead for route registration
- * - No additional middleware overhead during request processing
- * - Efficient delegation to specialized route handlers
+ * - Lookup is a linear scan, not a constant-time one: the router walks its
+ *   layer stack in registration order until a layer matches, so cost grows
+ *   with the number of layers registered. This router holds exactly one
+ *   layer today, the '/hello' mount below.
+ * - The mount is not free. A matching request is dispatched through this
+ *   router's layer and then through helloRouter's own stack, so delegation
+ *   costs one extra hop compared with declaring the route here directly.
+ * - Registration itself happens once, at module load, and allocates one layer
+ *   with its compiled prefix pattern.
  */
 router.use('/hello', helloRouter);
 
@@ -112,20 +129,23 @@ router.use('/hello', helloRouter);
  * Future Route Module Mounting Points
  * 
  * This section is reserved for mounting additional route modules as the
- * application grows. Following the same pattern as the hello router mounting,
- * new endpoints can be easily integrated without modifying existing code.
+ * application grows. Each addition is an edit to this file: the new module
+ * has to be required at the top and mounted here, following the same pattern
+ * as the hello router mounting above. Existing route modules do not change.
  * 
- * Example Future Mountings:
+ * The lines below are illustrations of code a reader would add. None of these
+ * routers exists in this project, and this application deliberately ships the
+ * single GET /hello endpoint only:
  * router.use('/api/users', userRouter);     // User management endpoints
  * router.use('/api/auth', authRouter);      // Authentication endpoints
  * router.use('/api/data', dataRouter);      // Data processing endpoints
  * router.use('/health', healthRouter);      // Health check endpoints
  * 
- * Scalability Benefits:
- * - Easy addition of new feature modules
- * - Clear namespace separation between functional areas
- * - Independent development and testing of route modules
- * - Supports microservice decomposition patterns
+ * What This Pattern Does And Does Not Buy:
+ * - Each functional area keeps its own URL namespace and its own module
+ * - Route modules can be developed and tested independently of one another
+ * - The aggregator remains the one place that has to be edited to expose a
+ *   new area, which also makes it the one place to read to see what is exposed
  */
 
 /**
@@ -143,7 +163,9 @@ router.use('/hello', helloRouter);
  * Export Type: Default CommonJS Export
  * - Compatible with both require() and import statements
  * - Follows Node.js module system conventions
- * - Enables tree-shaking in modern bundlers (if used)
+ * - Tree-shaking does not apply: a single CommonJS assignment exposes no
+ *   named bindings for a bundler to analyse statically, and this project uses
+ *   no bundler
  * 
  * Router Lifecycle:
  * 1. Router instance created and configured
@@ -157,40 +179,51 @@ router.use('/hello', helloRouter);
  * - Consumed by: Main application file (app.js)
  * - Provides: Complete routing tree for HTTP request handling
  * 
- * Security Considerations:
- * - Route isolation prevents cross-contamination between modules
- * - Path-to-regexp@8.x provides ReDoS attack mitigation
- * - No authentication logic at router level (delegated to route handlers)
- * - Standard Express security practices applied throughout
+ * Security Posture:
+ * - This router delegates paths and nothing more. It applies no security
+ *   control, and module organization is not a security boundary: mounting a
+ *   router does not restrict who may reach the handlers behind it.
+ * - Authentication and authorization are not implemented anywhere in this
+ *   application. No auth middleware is registered, no credential is read, and
+ *   no handler inspects an Authorization header, so every request that reaches
+ *   GET /hello is served unauthenticated.
+ * - No security middleware is installed or mounted: Helmet, CORS and rate
+ *   limiting are all absent. The only response-header control in the system is
+ *   app.disable('x-powered-by') in app.js, which is outside this file.
+ * - The mount path is the literal string '/hello'. No route parameter and no
+ *   user-supplied pattern is compiled here.
  */
 module.exports = router;
 
 /**
  * File Documentation Summary
  * 
- * This main routing index file implements the foundational routing architecture
- * for the Node.js tutorial application, demonstrating enterprise-grade patterns
- * for scalable Express.js applications.
+ * This main routing index file is the routing hub of the Node.js tutorial
+ * application: it shows how a single aggregator composes public paths out of
+ * endpoint modules that know nothing about where they are mounted.
  * 
- * Key Implementation Features:
- * - Modular router architecture with clear separation of concerns
- * - Express.js 5.1.0 best practices with modern promise support
- * - Comprehensive error handling and automatic promise rejection forwarding
- * - Production-ready code structure with extensive documentation
- * - Scalable foundation for future endpoint additions
+ * What This File Actually Contains:
+ * - One require of ./hello.js and one mount, router.use('/hello', helloRouter)
+ * - A router built by a bare express.Router(), so the default matcher applies:
+ *   case-insensitive and non-strict
+ * - A default CommonJS export of that router, consumed by app.js
+ * - No error handling of its own. Unmatched paths are answered by Express's
+ *   own 404, and an error thrown or a promise rejected inside a mounted route
+ *   module is forwarded by Express 5 to the four-arity errorHandler that
+ *   app.js registers after this router
  * 
  * Educational Value:
  * - Demonstrates proper Express router mounting patterns
  * - Shows modular application architecture principles
- * - Illustrates enterprise-grade code organization
  * - Provides foundation for understanding complex routing hierarchies
  * 
- * Production Readiness:
- * - Follows Express.js framework best practices
- * - Implements secure route matching with ReDoS protection
- * - Uses stable LTS versions of all dependencies
- * - Includes comprehensive error handling patterns
- * - Provides clear documentation for maintainability
+ * Limits Worth Stating Plainly:
+ * - Dependency versions are declared in src/backend/package.json. npm
+ *   packages carry no Node-style LTS designation, so no LTS status is claimed
+ *   for them here.
+ * - Neither this file nor the application around it is hardened for
+ *   production: there is no authentication, authorization, rate limiting,
+ *   request validation or security-header middleware anywhere in it.
  * 
  * Requirements Traceability:
  * - F-002: Hello Endpoint Implementation ✓ (Router integration)

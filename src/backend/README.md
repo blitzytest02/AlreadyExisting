@@ -28,28 +28,42 @@ Before you begin, ensure you have the following installed:
 
 ### Required Software
 
-- **[Node.js](https://nodejs.org/)**: v18.0.0 or higher — the floor declared by `engines.node` in `package.json` (**v22.16.0 LTS recommended**, the release this project is validated against)
-  - Node.js v22 is an even-numbered release line and carries the LTS codename 'Jod'
-  - The `>=18.0.0` floor is imposed by Express 5, not by any language feature this project uses
-- **[npm](https://www.npmjs.com/)**: v8.0.0 or higher — the floor declared by `engines.npm` (**v11.4.1 or higher recommended**; npm comes bundled with Node.js)
+- **[Node.js](https://nodejs.org/)**: v22.16.0 LTS or higher (**v22.16.0 LTS recommended**)
+  - Node.js v22 officially transitioned into Long Term Support (LTS) with codename 'Jod'
+  - Production applications should only use Active LTS or Maintenance LTS releases
+  - Includes critical updates and security support for years to come
+- **[npm](https://www.npmjs.com/)**: v11.4.1 or higher (comes bundled with Node.js)
+  - Latest npm version provides enhanced security and performance features
+
+### Optional Tooling
+
+Every command in this document runs with only Node.js and npm installed, except where it names one of these:
+
+- **[Git](https://git-scm.com/)**: cloning the repository, and `npm run test:watch`, which Jest refuses to run outside a Git working copy
+- **[curl](https://curl.se/)**, **[wget](https://www.gnu.org/software/wget/)** or **[HTTPie](https://httpie.io/)**: any one of them verifies the endpoint — a browser or Node's global `fetch` works equally well
+- **[Docker](https://www.docker.com/)**: only for the containerization notes under Deployment
+
+### Shell Assumptions
+
+The shell commands here are written for a POSIX shell such as bash or zsh: `export NAME=value` and `rm -rf` are POSIX syntax. On Windows, run them under WSL or Git Bash, or use the PowerShell equivalents — `$env:NAME = 'value'` to set an environment variable and `Remove-Item -Recurse -Force` for a recursive delete.
 
 ### System Requirements
 
 - **Operating System**: Windows, macOS, or Linux
 - **Memory**: Minimum 50MB RAM (typical usage < 30MB)
-- **Network**: Port 3000 available for HTTP server binding, or any free port supplied through the `PORT` environment variable
-- **Node.js Compatibility**: Express 5.1.0 requires Node.js 18 or higher
+- **Network**: Port 3000 available for HTTP server binding
+- **Node.js Compatibility**: Express 5.0 requires Node.js 18 or higher
 
 ### Version Verification
 
 ```bash
 # Verify Node.js installation
 node --version
-# Expected output: v18.0.0 or higher (v22.16.0 recommended)
+# Expected output: v22.16.0 or higher
 
-# Verify npm installation
+# Verify npm installation  
 npm --version
-# Expected output: 8.0.0 or higher (11.4.1 or higher recommended)
+# Expected output: 11.4.1 or higher
 ```
 
 ## Installation
@@ -67,11 +81,7 @@ cd src/backend
 ### 2. Dependency Installation
 
 ```bash
-# Install the exact dependency tree recorded in package-lock.json.
-# This is the command CI runs, and it is the reproducible option.
-npm ci
-
-# Alternatively, resolve the declared ranges (may update the lock file)
+# Install production dependencies
 npm install
 
 # Runtime dependencies installed:
@@ -88,20 +98,8 @@ npm install
 ```bash
 # Verify installation success
 npm list --depth=0
+# Should show installed packages without errors
 ```
-
-Expected output — the versions resolved from `package-lock.json`:
-
-```
-nodejs-tutorial-app-backend@1.0.0 /path/to/src/backend
-├── dotenv@16.6.1
-├── express@5.1.0
-├── jest@29.7.0
-├── nodemon@3.1.14
-└── supertest@7.1.1
-```
-
-`npm audit` should report `found 0 vulnerabilities`.
 
 ## Running the Application
 
@@ -114,36 +112,18 @@ Development mode uses `nodemon` for automatic server restart when file changes a
 ```bash
 # Start development server with auto-reload
 npm run dev
-```
 
-Expected output. `NODE_ENV` defaults to `development`, so both the configuration summary and the `[INFO]:` log prefixes are present:
-
+# Expected output:
+# Server starting...
+# Server listening on port 3000
+# Development mode: Auto-reload enabled
 ```
-[nodemon] 3.1.14
-[nodemon] to restart at any time, enter `rs`
-[nodemon] watching path(s): **/*
-[nodemon] watching extensions: js,json
-[nodemon] starting `node server.js`
-📊 Configuration loaded successfully:
-   🚀 App Name: node-tutorial-app
-   🌐 Host: localhost
-   📡 Port: 3000
-   🔧 Environment: development
-   📝 Logging: enabled
-[INFO]: 🚀 HTTP Server successfully started and listening on port 3000
-[INFO]: 🌐 Server is ready to accept HTTP requests
-[INFO]: 📍 Local development URL: http://localhost:3000
-[INFO]: ⚡ Node.js v22.16.0 | Express 5.1.0 | Environment: development
-[INFO]: 🎯 Tutorial application initialized successfully
-```
-
-The Node.js version in the last line is whatever `process.version` reports for the runtime you started, and `App Name` falls back to `node-tutorial-app` when no `.env` supplies `APP_NAME`.
 
 **Development Mode Features:**
-- **Auto-reload**: `nodemon` restarts `node server.js` whenever a watched `.js` or `.json` file changes; `tests/`, `node_modules/` and `package-lock.json` are ignored (see `nodemon.json`)
-- **Request Logging**: `middleware/requestLogger.js` writes one record per request — `[INFO]: HTTP Request - Method: GET Path: /hello Body: {}`
-- **Prefixed Log Levels**: `utils/logger.js` prefixes records with `[INFO]:` and `[ERROR]:` in development only
-- **Configuration Summary**: `config/index.js` prints the resolved configuration at startup in development only
+- **Auto-reload**: Automatically restarts server on file changes
+- **Enhanced Logging**: Detailed request/response logging for debugging
+- **Error Reporting**: Comprehensive error messages for development
+- **Performance Monitoring**: Basic timing and memory usage reporting
 
 ### Production Mode
 
@@ -151,25 +131,19 @@ Production mode runs the server using the standard `node` runtime without additi
 
 ```bash
 # Start production server
-NODE_ENV=production npm start
-```
+npm start
 
-Expected output. The environment, not the script, is what changes the logging: with `NODE_ENV=production` the configuration summary is suppressed and records carry no level prefix. A bare `npm start` with no `NODE_ENV` set produces the development output shown above.
-
-```
-🚀 HTTP Server successfully started and listening on port 3000
-🌐 Server is ready to accept HTTP requests
-📍 Local development URL: http://localhost:3000
-⚡ Node.js v22.16.0 | Express 5.1.0 | Environment: production
-🎯 Tutorial application initialized successfully
+# Expected output:
+# Server starting...
+# Server listening on port 3000
+# Production mode: Optimized for performance
 ```
 
 **Production Mode Features:**
-- **No Watcher Process**: runs `node server.js` directly, without `nodemon`
-- **Unprefixed Logging**: `utils/logger.js` omits the `[INFO]:` and `[ERROR]:` prefixes outside development
-- **Suppressed Configuration Summary**: `config/index.js` prints the startup summary in development only
-- **Secure Error Responses**: `middleware/errorHandler.js` logs the failure server-side and returns a generic JSON envelope, disclosing no implementation detail
-- **Resource Efficiency**: no build step, no watcher process, and a single static response path
+- **Optimized Performance**: Minimal overhead for maximum throughput
+- **Standard Logging**: Essential logging without development verbosity
+- **Error Handling**: Secure error responses without sensitive information disclosure
+- **Resource Efficiency**: Minimal memory footprint and CPU usage
 
 ### Server Startup Verification
 
@@ -177,7 +151,7 @@ Once started, the server listens at:
 - **Base URL**: `http://localhost:3000` — the root path itself is not routed and answers `404`
 - **Only Endpoint**: `http://localhost:3000/hello`
 
-`/hello` is the single route this application declares. It is also the availability signal used by the container health check (`wget --spider`, which issues a `HEAD` request) and by the Kubernetes probes, so no separate probe route exists or is needed.
+`/hello` is the single route this application declares. It is also the availability signal used by the container health check (a bounded `node` `http.request` probe that issues a `HEAD` request) and by the Kubernetes probes, so no separate probe route exists or is needed.
 
 Expected startup time: < 5 seconds for optimal performance.
 
@@ -195,7 +169,7 @@ Returns a simple "Hello world" message demonstrating basic HTTP endpoint functio
 - **URL**: `/hello`
 - **Headers**: No special headers required
 - **Authentication**: None required
-- **Query Parameters**: None supported
+- **Query Parameters**: None used — the matcher accepts a query string and the handler ignores it
 
 **Response Specification:**
 - **Status Code**: 200 (OK)
@@ -216,8 +190,11 @@ wget -qO- http://localhost:3000/hello
 
 # Using HTTPie
 http GET localhost:3000/hello
+```
 
-# Using JavaScript fetch
+From JavaScript — a browser console, or Node's global `fetch`:
+
+```javascript
 fetch('http://localhost:3000/hello')
   .then(response => response.text())
   .then(data => console.log(data));
@@ -260,27 +237,17 @@ src/backend/
 ├── server.js              # Main entry point - HTTP server initialization
 ├── app.js                 # Express application configuration and middleware setup
 ├── routes/                # Route definitions and handlers
-│   ├── index.js          # Route aggregator - mounts the hello router at /hello
-│   └── hello.js          # Hello endpoint implementation (GET / inside that mount)
+│   └── hello.js          # Hello endpoint implementation
 ├── middleware/            # Custom Express middleware
 │   ├── errorHandler.js   # Centralized error handling middleware
 │   └── requestLogger.js  # HTTP request logging middleware
 ├── config/                # Configuration management
 │   └── index.js          # Environment-specific configuration
 ├── utils/                 # Utility functions and helpers
-│   └── logger.js         # Structured logging utility
+│   └── logger.js         # Console info/error logging utility
 ├── tests/                 # Test suites executed by `npm test`
 │   ├── unit/             # Unit tests
-│   │   ├── hello.test.js         # Endpoint behaviour driven through Supertest
-│   │   ├── errorHandler.test.js  # Error envelope and chain termination
-│   │   └── requestLogger.test.js # Request body serialization branches
 │   └── integration/      # Integration tests
-│       └── hello.test.js         # Server lifecycle on an ephemeral port
-├── .env.example           # Environment variable template
-├── .eslintrc.js           # Codified lint rules (tooling not installed)
-├── .prettierrc            # Codified formatting rules (tooling not installed)
-├── jest.config.js         # Jest configuration and coverage thresholds
-├── nodemon.json           # Watch configuration used by `npm run dev`
 ├── package.json           # Project metadata and dependency definitions
 ├── package-lock.json      # Dependency version lock file
 └── README.md             # This documentation file
@@ -289,17 +256,16 @@ src/backend/
 ### Component Descriptions
 
 **Core Application Files:**
-- **`server.js`**: Main entry point that starts the HTTP server and binds to the configured port (3000 by default)
+- **`server.js`**: Main entry point that starts the HTTP server and binds to port 3000
 - **`app.js`**: Express application configuration, middleware registration, and route setup
-- **`routes/index.js`**: Route aggregator that mounts the hello router at `/hello`, composing the public path
 - **`routes/hello.js`**: Implementation of the `/hello` endpoint with proper error handling
 
 **Middleware Components:**
 - **`errorHandler.js`**: Centralized error handling using Express 5.1.0's enhanced promise support
-- **`requestLogger.js`**: HTTP request logging — one record per request carrying the method, path and body
+- **`requestLogger.js`**: HTTP request/response logging for monitoring and debugging
 
 **Support Modules:**
-- **`config/index.js`**: Environment-based configuration management, and the only reader of `process.env`
+- **`config/index.js`**: Environment-based configuration management
 - **`utils/logger.js`**: `info` and `error` helpers over `console.log`/`console.error`, prefixed with the severity in development
 
 ## Dependencies
@@ -330,9 +296,7 @@ src/backend/
 `jest` is held on the 29.x line deliberately, and 29.7.0 is not the newest release available. The current major, `jest@30`, publishes an engine range that excludes Node 18.0–18.13, 19, 21 and 23 — every one of which this package's `engines.node` floor of `>=18.0.0` admits — whereas `jest@29.7.0`'s range contains that floor exactly. The 29.x line is the compatible choice, not the latest one.
 
 **Development Tools:**
-- **`jest`**: Runs every suite under `tests/` and enforces the coverage thresholds declared in `jest.config.js`
 - **`nodemon`**: Automatically restarts the node application when file changes are detected
-- **`supertest`**: Issues requests against the exported Express application without binding a public port
 - **Built-in Node.js tools**: Debugging with `--inspect` flag, performance profiling
 
 ## Architecture Overview
@@ -371,62 +335,38 @@ HTTP Client → HTTP Server → Express Application → Route Handler → Respon
 
 ### Environment Variables
 
-`config/index.js` is the only module that reads `process.env`, and every setting it reads has a literal fallback, so the application starts correctly with nothing configured. Copy `.env.example` to `.env` to override any of them locally.
-
 | Variable | Default | Description | Example |
 |----------|---------|-------------|---------|
-| `NODE_ENV` | `development` | Application environment. `development` is what enables the startup configuration summary and the `[INFO]:` log prefixes | `production` |
-| `PORT` | `3000` | HTTP server port. A non-numeric or zero value falls back to 3000, so `PORT=0` does **not** request an OS-assigned port | `8080` |
-| `APP_NAME` | `node-tutorial-app` | Name reported in the startup configuration summary | `nodejs-tutorial-hello-world` |
-| `HOST` | `localhost` | Recorded in configuration and printed at startup, but **not** passed to `server.listen()`. Node therefore binds every interface, which is what keeps a published container port reachable | `0.0.0.0` |
-| `LOG_LEVEL` | `info` | Documented convention only — no module reads this variable, so setting it has no effect. `NODE_ENV` is what controls log formatting today | `debug` |
-
-Setting `ENABLE_LOGGING=false` suppresses the development startup summary; it does not disable request logging.
+| `NODE_ENV` | `development` | Application environment | `production` |
+| `PORT` | `3000` | HTTP server port | `8080` |
+| `LOG_LEVEL` | — (unread) | Documented convention only; no module reads this variable, so setting it has no effect. `NODE_ENV` is what controls log formatting | `debug` |
 
 ### Configuration Examples
 
 ```bash
-# Development configuration (these values are also the defaults)
+# Development configuration
 export NODE_ENV=development
 export PORT=3000
 
-# Production configuration
+# Production configuration  
 export NODE_ENV=production
 export PORT=8080
 ```
 
 ## Performance Monitoring
 
-### Built-in Observability
+### Built-in Monitoring
 
-The observability this application implements is one log record per request, written by `middleware/requestLogger.js`, plus an `[ERROR]:` record whenever a handler throws. There is no metrics endpoint, no timing instrumentation and no memory reporting anywhere in the code:
-
-```
-[INFO]: HTTP Request - Method: GET Path: /hello Body: {}
-```
-
-Response time is therefore measured from outside the process. `curl` reports it directly:
-
-```bash
-# Total time for a single request
-curl -s -o /dev/null -w "%{time_total}\n" http://localhost:3000/hello
-
-# Ten sequential requests
-for i in $(seq 1 10); do
-  curl -s -o /dev/null -w "%{time_total}\n" http://localhost:3000/hello
-done
-```
-
-Measured against a locally running server, `GET /hello` typically completes in under a millisecond, and comfortably inside the 100ms budget in any case.
+The monitoring this application implements is one log record per request, written by `middleware/requestLogger.js`, plus an `[ERROR]:` record whenever a handler throws. There is no metrics endpoint and no health route — `GET /hello` itself is the availability signal used by the container health check and the Kubernetes probes.
 
 ### Performance Metrics
 
-| Metric | Target | How to observe it |
-|--------|--------|-------------------|
-| Response Time | < 100ms | `curl -w "%{time_total}"`, as above |
-| Memory Usage | < 50MB | Operating system process tools (`ps`, Activity Monitor, Task Manager) |
-| Error Rate | < 0.1% | `[ERROR]:` records written to stderr by `utils/logger.js` |
-| Availability | `GET /hello` answers 200 | `curl -i http://localhost:3000/hello` — the same signal the container check and the Kubernetes probes use |
+| Metric | Target | Monitoring Method |
+|--------|--------|------------------|
+| Response Time | < 100ms | Built-in timing |
+| Memory Usage | < 50MB | Process monitoring |
+| Error Rate | < 0.1% | Error logging |
+| Uptime | > 99.9% | Health checks |
 
 ## Testing
 
@@ -489,8 +429,7 @@ curl -i -X POST http://localhost:3000/hello
 
 ### Current Security Implementation
 
-- **No User Input**: the endpoint accepts no path parameters, query string or body, so there is no application input to validate
-- **Fingerprint Suppression**: `app.disable('x-powered-by')` keeps the `X-Powered-By` header off every response — the only response-header control this application applies
+- **No Consumed Input**: the hello handler reads no path parameters, query values or request body and returns a constant response, so no request data is reflected back. Requests can still carry a query string, headers and a body — Express matches `/hello?anything` and exposes `req.query`, and `middleware/requestLogger.js` records the request's original URL — so treat request data as untrusted in any handler you add
 - **Error Handling**: Secure error responses without information disclosure
 - **Dependencies**: Regular security updates using `npm audit`
 - **Transport**: HTTP only (suitable for local development)
@@ -531,12 +470,10 @@ npm start
 **Module Not Found:**
 ```bash
 # Error: Cannot find module 'express'
-# Solution: reinstall from the committed lock file
-rm -rf node_modules
-npm ci
+# Solution: Reinstall dependencies
+rm -rf node_modules package-lock.json
+npm install
 ```
-
-Do not delete `package-lock.json` to fix an install problem. `npm ci` reinstalls exactly the tree the lock file records — the same tree that CI and the container image install.
 
 **Permission Denied:**
 ```bash
@@ -548,10 +485,9 @@ npm start
 
 ### Debugging
 
-**Enable Verbose Logging:**
+**Enable Debug Logging:**
 ```bash
-# NODE_ENV=development is what adds the [INFO]: / [ERROR]: prefixes
-# and prints the startup configuration summary
+# Set debug environment
 export NODE_ENV=development
 npm run dev
 ```
@@ -577,13 +513,10 @@ node --inspect server.js
 ### Code Style Guidelines
 
 - **ES2022+ Syntax**: Use modern JavaScript features
-- **CommonJS Modules**: `require`/`module.exports` throughout — `.eslintrc.js` sets `sourceType: 'script'` and `package.json` declares no `"type": "module"`
 - **Async/Await**: Prefer promises over callbacks
 - **Error Handling**: Implement comprehensive error management
 - **Documentation**: Comment complex logic and public APIs
 - **Testing**: Include tests for new functionality
-
-`.eslintrc.js` and `.prettierrc` codify that style concretely — two-space indentation, single quotes, mandatory semicolons and an 80-column print width. Neither ESLint nor Prettier is declared as a dependency and there is no `lint` or `format` script, so the standard is documented rather than machine-enforced. Match it by hand, or invoke either tool through `npx` if you want a check.
 
 ## Deployment
 
@@ -600,21 +533,14 @@ For production deployment, consider:
 
 **Containerization:**
 
-The repository already ships a multi-stage production image definition at `infrastructure/docker/Dockerfile`. Its build context is the repository root, so build it from there:
-
-```bash
-docker build -t nodejs-tutorial-app -f infrastructure/docker/Dockerfile .
-docker run -p 3000:3000 nodejs-tutorial-app
-```
-
-The essential shape of that image, for reference:
+The repository ships its own image definition at `infrastructure/docker/Dockerfile`: a two-stage build on `node:22-alpine` that installs into `/usr/src/app`, copies the manifests from the builder stage, runs as a non-root user and declares a `HEALTHCHECK` against `/hello`. The snippet below is a deliberately simplified single-stage illustration of the pattern, not an excerpt of that file:
 
 ```dockerfile
 FROM node:22-alpine
 WORKDIR /app
-COPY src/backend/package.json src/backend/package-lock.json ./
-RUN npm ci --omit=dev
-COPY src/backend/ ./
+COPY package*.json ./
+RUN npm ci --only=production
+COPY . .
 EXPOSE 3000
 CMD ["npm", "start"]
 ```
@@ -633,7 +559,7 @@ pm2 start server.js --name "hello-api"
 1. **Extend Functionality**: Add more endpoints and HTTP methods
 2. **Database Integration**: Connect to PostgreSQL or MongoDB
 3. **Authentication**: Implement JWT-based authentication
-4. **Testing**: Extend the existing unit and integration suites to cover whatever you add
+4. **Testing**: Add comprehensive unit and integration tests
 5. **Monitoring**: Integrate with monitoring solutions like Prometheus
 
 ### Recommended Reading
@@ -656,4 +582,4 @@ For questions, issues, or contributions:
 
 **License**: ISC, as declared by the `license` field in `src/backend/package.json`. This tutorial project is provided for educational purposes.
 
-**Node.js Version**: v22.16.0 LTS | **Express Version**: 5.1.0
+**Last Updated**: December 2024 | **Node.js Version**: v22.16.0 LTS | **Express Version**: 5.1.0

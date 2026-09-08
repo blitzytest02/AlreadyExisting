@@ -71,8 +71,24 @@ module.exports = {
   verbose: true,
 
   // Mock Cleanup
-  // Automatically clears mock calls and instances between tests
-  // Ensures test isolation and prevents mock state leakage
+  // Before every test, Jest clears the usage data recorded on each mock it
+  // knows about - mock.calls, mock.instances, mock.contexts and mock.results -
+  // which is exactly what writing jest.clearAllMocks() in a beforeEach hook
+  // would do. Call-count assertions such as expect(spy).toHaveBeenCalledTimes(1)
+  // therefore start every test from zero recorded calls.
+  //
+  // What this setting does not do matters just as much. It does not restore an
+  // original implementation, it does not remove one installed through
+  // mockImplementation() or mockReturnValue(), and it does not detach a
+  // jest.spyOn() spy from the object whose method it replaced: a fake stays
+  // installed and keeps running for the remaining tests in that file.
+  //
+  // So a suite that installs a fake is responsible for taking it back out, and
+  // both middleware suites do. Each silences the logger in beforeEach with
+  // jest.spyOn(...).mockImplementation(() => {}) - requestLogger.test.js on
+  // both logger.info and logger.error, errorHandler.test.js on logger.error -
+  // and each calls jest.restoreAllMocks() in afterEach, which is what puts the
+  // genuine console writes back afterwards.
   clearMocks: true,
 
   // Test Timeout

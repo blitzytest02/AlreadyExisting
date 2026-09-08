@@ -152,7 +152,7 @@ The application exposes a single API endpoint designed to demonstrate fundamenta
 **Description**: Returns a static "Hello world" message demonstrating basic HTTP GET request handling.
 
 **Technical Details:**
-- **Method**: `GET` is the only declared route. Express derives two protocol behaviours from that single declaration rather than adding endpoints: `HEAD` returns 200 with the same headers and no body, and `OPTIONS` returns 200 with `Allow: GET, HEAD`. `POST`, `PUT` and `DELETE` return 404
+- **Method**: `GET` is the only declared route. Express derives two protocol behaviours from that single declaration rather than adding endpoints: `HEAD` returns 200 with the same headers and no body, and `OPTIONS` returns 200 with `Allow: GET, HEAD`. `POST`, `PUT`, `DELETE` and `PATCH` return 404
 - **Response**: The literal string `Hello world` - 11 bytes, no trailing newline
 - **Status Code**: 200 OK
 - **Content-Type**: text/html; charset=utf-8
@@ -191,7 +191,7 @@ src/backend/
 - **Routing**: Express Router with modular organization
 - **Middleware**: Request logging and error handling
 - **Configuration**: Environment-based configuration management
-- **Logging**: Structured logging with multiple output formats
+- **Logging**: Console logging that adds `[INFO]:` and `[ERROR]:` level prefixes in development and writes the same messages unprefixed elsewhere
 
 For a detailed explanation of the system architecture, design patterns, and component interactions, please see the [Architecture Overview](./docs/architecture/overview.md).
 
@@ -256,8 +256,8 @@ npm run test:watch
 ### 🛠 Development Tools
 
 - **Nodemon**: Automatic server restart during development
-- **ESLint configuration**: `.eslintrc.js` codifies the project's style standard - two-space indentation, single quotes, mandatory semicolons and an 80-column width. The tooling itself is not installed as a dependency, so the standard is followed by convention rather than enforced by a command
-- **Prettier configuration**: `.prettierrc` records the same formatting rules for editors that read it, and is likewise not installed as a dependency
+- **ESLint configuration**: `.eslintrc.js` codifies the project's code rules - two-space indentation, single quotes and mandatory semicolons. The tooling itself is not installed as a dependency, so the standard is followed by convention rather than enforced by a command
+- **Prettier configuration**: `.prettierrc` records the same indentation, quoting and semicolon rules for editors that read it, and is the one file that sets the 80-column line width (`printWidth: 80`); it is likewise not installed as a dependency
 - **Jest**: Testing framework with coverage reporting
 
 ### 📝 Scripts

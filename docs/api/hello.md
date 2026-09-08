@@ -23,6 +23,12 @@ This document provides comprehensive details for the `/hello` API endpoint. This
 - **Derived by Express:** `HEAD` returns `200` with the same headers as `GET` and no response body; `OPTIONS` returns `200` with `Allow: GET, HEAD`. Both are protocol behaviours Express derives from the single `GET` declaration, not additional endpoints
 - **Not Routed:** `POST`, `PUT`, `DELETE` and `PATCH` return `404 Not Found`
 
+### Path Matching
+- **Case-insensitive:** `GET /HELLO` returns `200`, just as `GET /hello` does
+- **Non-strict:** `GET /hello/` returns `200` — a trailing slash is ignored
+- **Source of this behaviour:** Express's default matching. Both routers are constructed by a bare `express.Router()` (`src/backend/routes/index.js`, `src/backend/routes/hello.js`), so no routing option is overridden by this application
+- **Not additional endpoints:** `/HELLO` and `/hello/` are alternate spellings that resolve to the same single declared route, `GET /hello`
+
 ### Request Parameters
 This endpoint does not require any parameters, headers, or request body:
 - **Path Parameters:** None
@@ -45,6 +51,7 @@ Host: localhost:3000
 - **Status Code:** `200 OK`
 - **Content-Type:** `text/html; charset=utf-8`
 - **Content-Length:** 11 bytes
+- **X-Powered-By:** absent — the header is not sent, because `app.js` calls `app.disable('x-powered-by')`
 - **Response Body:**
 ```
 Hello world
@@ -60,6 +67,8 @@ Connection: keep-alive
 Keep-Alive: timeout=5
 ```
 
+`X-Powered-By` is absent from this response and from every other response the application sends: `app.js` calls `app.disable('x-powered-by')`, so Express never emits the header it would otherwise add by default.
+
 ### Performance Characteristics
 - **Target Response Time:** < 100ms (as per F-002 performance criteria)
 - **Typical Response Time:** < 25ms under normal conditions
@@ -70,7 +79,7 @@ Keep-Alive: timeout=5
 
 ## Error Responses
 
-### Method Not Allowed
+### Unrouted HTTP Methods
 - **Scenario:** When using `POST`, `PUT`, `DELETE` or `PATCH` on `/hello` (`HEAD` and `OPTIONS` are served successfully and do not produce this response)
 - **Status Code:** `404 Not Found`
 - **Reason:** Express.js default behavior for unmatched route/method combinations
@@ -193,7 +202,7 @@ This endpoint demonstrates:
 - Server should handle concurrent requests efficiently
 
 ### Browser Compatibility
-- Tested on Chrome, Firefox, Safari, and Edge
+- Expected to work in Chrome, Firefox, Safari and Edge — the repository contains no browser-based test run, so this is an expectation rather than a verified result
 - Compatible with all modern web browsers
 - No JavaScript required for functionality
 
@@ -205,6 +214,7 @@ This endpoint demonstrates:
 - **Authentication:** None required (tutorial endpoint)
 - **Authorization:** No access restrictions
 - **Data Exposure:** Only static text response, no sensitive data
+- **Framework Fingerprinting:** Suppressed — `app.disable('x-powered-by')` keeps the `X-Powered-By` header off every response, the only response-header control this application applies
 - **Rate Limiting:** Not implemented (tutorial scope)
 
 ---
@@ -215,7 +225,7 @@ This endpoint demonstrates:
 
 | Issue | Symptom | Solution |
 |-------|---------|----------|
-| Server not running | Connection refused | Start server with `npm start` |
+| Server not running | Connection refused | Start server with `cd src/backend && npm start` — the `start` script lives in `src/backend/package.json`, and the repository root has no `package.json` |
 | Wrong port | 404 or connection error | Verify server running on port 3000 |
 | Method error | 404 response | Use GET (HEAD and OPTIONS also succeed); POST, PUT, DELETE and PATCH are not routed |
 | Network issues | Timeout | Check localhost connectivity |
@@ -237,6 +247,6 @@ curl -X POST http://localhost:3000/hello
 ## Related Documentation
 
 - **Server Setup:** See main README.md for installation and startup instructions
-- **Technical Specifications:** Reference TECHNICAL_SPECIFICATIONS.md for detailed requirements
+- **Technical Specifications:** Reference [Technical Specifications](../../blitzy/documentation/Technical%20Specifications_27cec292-747e-46ad-9dd6-ca621eea00f6.md) for detailed requirements
 - **Implementation Guide:** Check src/backend/routes/hello.js for code details
 - **Testing Guide:** Refer to test suite for validation examples

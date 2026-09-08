@@ -31,8 +31,9 @@ const router = express.Router();
  *   OPTIONS /hello returns 200 with an "Allow: GET, HEAD" header. POST, PUT and
  *   DELETE match no route and are answered by Express's default handler with 404.
  *   The derived HEAD behaviour is depended upon rather than incidental: the
- *   container health check probes this path with "wget --spider", which issues a
- *   HEAD request, so HEAD must not be suppressed (infrastructure/docker/Dockerfile).
+ *   container health check probes this path with a bounded node http.request
+ *   probe whose method is HEAD, so HEAD must not be suppressed
+ *   (infrastructure/docker/Dockerfile).
  * - F-004-RQ-003: Sends the "Hello world" text in the response body
  * 
  * Technical Specifications:
@@ -41,9 +42,15 @@ const router = express.Router();
  * - Content-Type: text/html; charset=utf-8 (automatically set by Express res.send())
  * - Response Body: "Hello world" (exact text as specified)
  * 
+ * Annotation note: the two parameters below carry the built-in object type
+ * rather than a framework-specific type symbol. Express 5.1.0 publishes no
+ * TypeScript declarations, no declaration package for it is a dependency of
+ * this project, and none may be added, so a framework type symbol would not
+ * resolve for any reader or tool. Both values are objects at runtime.
+ *
  * @route GET /
- * @param {express.Request} req - Express request object containing HTTP request data
- * @param {express.Response} res - Express response object for sending HTTP response
+ * @param {object} req - Express request object containing HTTP request data
+ * @param {object} res - Express response object for sending HTTP response
  * @returns {void} Terminates the request-response cycle by sending response to client
  */
 router.get('/', (req, res) => {
@@ -89,11 +96,15 @@ router.get('/', (req, res) => {
  * imported and mounted by the main application router in src/backend/routes/index.js.
  * 
  * Export Type: Default export (CommonJS module.exports)
- * Usage: This router will be mounted at the /hello path in the main application
+ * Usage: The route aggregator mounts this router at the /hello path; the
+ *   application composition root never imports it directly.
  * 
  * Integration Pattern:
- * - Main app imports this router: const helloRouter = require('./routes/hello')
- * - Main app mounts router: app.use('/hello', helloRouter)
+ * - The route aggregator src/backend/routes/index.js imports this router:
+ *   const helloRouter = require('./hello.js')
+ * - The same aggregator mounts it on itself: router.use('/hello', helloRouter)
+ * - src/backend/app.js mounts that aggregator at the application root with
+ *   app.use('/', routes), which is what makes the composed path public
  * - Final endpoint accessible at: GET /hello
  * 
  * Architecture Benefits:

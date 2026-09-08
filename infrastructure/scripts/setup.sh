@@ -13,13 +13,16 @@
 # Author: Development Team
 # Target: Node.js v22.16.0 LTS with Express.js 5.1.0
 # 
-# Requirements Addressed:
-# - Development Environment Setup (TECHNICAL_SPECIFICATIONS.md/3.6.3)
-# - Package Installation Commands (TECHNICAL_SPECIFICATIONS.md/3.3.4) 
-# - Containerization (TECHNICAL_SPECIFICATIONS.md/3.6.5)
+# Requirements Addressed - sections of the tracked specification at
+# blitzy/documentation/Technical Specifications_27cec292-747e-46ad-9dd6-ca621eea00f6.md:
+# - Development Environment Setup (section 3.6.3)
+# - Package Installation Commands (section 3.3.4)
+# - Containerization (section 3.6.5)
 #
 # Usage: ./infrastructure/scripts/setup.sh
-# Prerequisites: Run from project root directory
+#        Shown from the project root, but the working directory does not matter:
+#        SCRIPT_DIR and PROJECT_ROOT are derived from BASH_SOURCE below, so the
+#        script resolves its own paths from wherever it is invoked.
 # =============================================================================
 
 # Script configuration and global variables
@@ -61,7 +64,11 @@ log_error() {
 #              installed on the system before proceeding with the setup.
 #              Validates Node.js version against technical specifications.
 # Parameters: None
-# Returns: Exits with error code if any prerequisite is not met
+# Returns: 0 when every fatal check passes. Exits 1 when node, npm or docker is
+#          absent from PATH, when the Node.js major version is below 18, when
+#          the Docker daemon is unreachable, or when the backend directory, its
+#          package.json or the Dockerfile is missing. An npm major version below
+#          8 is not fatal: it logs a warning and execution continues.
 # =============================================================================
 check_prerequisites() {
     log_info "Checking system prerequisites for Node.js tutorial application setup..."
@@ -189,7 +196,9 @@ install_dependencies() {
     log_info "Executing: npm install"
     log_info "This may take several minutes depending on network speed..."
     
-    # Run npm install with enhanced error handling and output capture
+    # Run npm install. Its output is neither captured nor redirected - it streams
+    # straight to the terminal - and only the command's exit status is handled,
+    # by the if/else below
     if npm install --progress=true --loglevel=info; then
         log_success "npm dependencies installed successfully"
         
@@ -199,9 +208,11 @@ install_dependencies() {
             log_info "Created node_modules directory with $MODULES_COUNT packages"
         fi
         
-        # Display installed package information
+        # Confirm the dependency lockfile is in place. The repository commits
+        # package-lock.json, so npm install normally confirms or updates the
+        # existing file rather than creating a new one
         if [ -f "package-lock.json" ]; then
-            log_info "package-lock.json created for dependency version locking"
+            log_info "package-lock.json present for dependency version locking"
         fi
         
     else
@@ -276,9 +287,15 @@ build_docker_image() {
     log_info "  - Image tag: $DOCKER_IMAGE_TAG"
     log_info "  - Build context: Current directory and subdirectories"
     
-    # Execute Docker build command with comprehensive configuration
-    # Uses multi-stage Dockerfile for production-optimized image
-    # Dockerfile creates lean, secure image with non-root user execution
+    # Execute the Docker build with the configuration logged above.
+    # The Dockerfile applies three concrete controls, and no others are claimed
+    # here: it builds in two stages and copies only the manifests forward, so
+    # the builder stage's dependency tree never reaches the final image; the
+    # runtime stage installs with npm ci --omit=dev, so devDependencies are not
+    # installed at runtime; and it creates the nodejs user (UID/GID 1001) and
+    # switches to it with USER before CMD, so the process does not run as root.
+    # The build context itself is filtered by the repository-root .dockerignore,
+    # which is the authority on what the copied source tree excludes
     log_info "Executing Docker build command..."
     log_info "This process may take several minutes for first-time builds..."
     
@@ -295,7 +312,7 @@ build_docker_image() {
             log_info "Docker image details displayed above"
         fi
         
-        # Display image size and layers information
+        # Display the built image size, the only value queried here
         IMAGE_SIZE=$(docker images "$DOCKER_IMAGE_NAME:$DOCKER_IMAGE_TAG" --format "{{.Size}}")
         log_info "Final image size: $IMAGE_SIZE"
         
@@ -341,7 +358,10 @@ echo "Target image: $DOCKER_IMAGE_NAME:$DOCKER_IMAGE_TAG"
 echo "============================================================================="
 
 # Phase 1: Prerequisites Verification
-# Validates system environment and required tools installation
+# Validates the system environment and required tooling. A missing node, npm or
+# docker executable, a Node.js major version below 18, an unreachable Docker
+# daemon or a missing project path aborts the script; an npm major version below
+# 8 only logs a warning and execution continues
 log_info "Phase 1/3: Prerequisites Verification"
 check_prerequisites
 
@@ -389,7 +409,7 @@ log_info "Development Resources:"
 log_info "  - Application logs: Console output"
 log_info "  - Package management: npm commands in $BACKEND_DIR"
 log_info "  - Container management: docker commands with $DOCKER_IMAGE_NAME"
-log_info "  - Technical documentation: TECHNICAL_SPECIFICATIONS.md"
+log_info "  - Technical documentation: docs/README.md (indexes the setup, API and architecture guides)"
 
 echo ""
 log_success "Setup process completed at $(date '+%Y-%m-%d %H:%M:%S %Z')"

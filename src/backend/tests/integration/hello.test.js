@@ -1,22 +1,31 @@
 /**
  * Integration Test Suite for Hello API Endpoint
  * 
- * This integration test file verifies the functionality of the /hello endpoint from end-to-end.
- * It uses Supertest to send live HTTP requests to the running application, ensuring that the
- * server, routing, and response generation work together as expected.
+ * This file exercises the /hello endpoint over real HTTP, and it does so through
+ * two INDEPENDENT checks that share no server instance:
  * 
- * The test suite implements comprehensive integration testing patterns that validate:
- * - HTTP server initialization and startup
- * - Express.js application routing and middleware processing
- * - Endpoint response generation and content delivery
- * - Error handling for non-existent routes
- * - Server lifecycle management during testing
+ * 1. A server lifecycle check. beforeAll calls listen(0) on the http.Server
+ *    exported by server.js and afterAll closes it. That proves the module can
+ *    be imported without binding a port, can take an OS-assigned one on demand
+ *    and releases it again. This server receives none of the requests below.
+ * 2. HTTP request assertions against the exported Express app. request(app)
+ *    hands the app - a plain function - to Supertest, which wraps it in an
+ *    http.createServer(app) of its own and binds a separate ephemeral port for
+ *    the request. The two servers hold different ports at the same time.
+ * 
+ * What the two request cases validate:
+ * - Routing through the aggregated router to the /hello handler, and the exact
+ *   response Express derives from res.send('Hello world')
+ * - The status, Content-Type and body of GET /hello
+ * - The 404 that Express's built-in final handler returns for an unmatched
+ *   route, and the absence of the X-Powered-By header on it
  * 
  * Testing Architecture:
  * - Jest v29+ as the primary testing framework for test organization and assertions
- * - Supertest v7.1.1 for HTTP endpoint testing with live server requests
- * - Real HTTP server instance for authentic integration testing scenarios
- * - Proper server lifecycle management with setup and teardown procedures
+ * - Supertest v7.1.1, which creates and tears down an HTTP server of its own for
+ *   each request, so no separately managed or fixed-port server is required
+ * - The server.js instance the hooks open and close, used as a lifecycle check
+ *   and never as the target of a request
  * 
  * Requirements Implementation:
  * - TC-003: Provides the test case for the /hello API endpoint
@@ -33,11 +42,13 @@
  * - Ephemeral port allocation for CI/CD compatibility and test isolation
  * 
  * Test Strategy:
- * - End-to-end testing approach verifying complete request-response cycle
- * - Real HTTP server startup and shutdown for authentic testing conditions
- * - HTTP protocol compliance testing with status codes and headers
- * - Response content validation ensuring exact specification compliance
- * - Error condition testing for comprehensive coverage of failure scenarios
+ * - Real HTTP requests over loopback against the composed application, so the
+ *   middleware chain and the router run as they do in production
+ * - Server startup and shutdown exercised once, on the imported server, apart
+ *   from the request assertions
+ * - Status code, Content-Type and exact body verification for GET /hello
+ * - One failure condition: an unmatched route returning 404. No other failure
+ *   path is exercised - see the future-work list inside the describe block
  * 
  * Educational Value:
  * - Demonstrates proper integration testing patterns for Node.js applications
@@ -57,88 +68,93 @@ const server = require('../../server.js'); // HTTP server instance for lifecycle
 /**
  * Hello API Endpoint Integration Test Suite
  * 
- * This test suite groups all integration tests related to the /hello endpoint,
- * providing comprehensive coverage of the endpoint's functionality including
- * success scenarios, error conditions, and edge cases.
+ * This suite holds exactly three things: a beforeAll/afterAll pair that opens
+ * and closes the imported server once for the whole file, and two test cases.
  * 
- * Test Suite Organization:
- * - Setup and teardown procedures for server lifecycle management
- * - Success path testing for normal endpoint operation
- * - Error condition testing for comprehensive coverage
- * - Response validation testing for specification compliance
+ * Suite Contents:
+ * - beforeAll / afterAll: open the server.js instance on an ephemeral port and
+ *   close it again - once per file, not once per test
+ * - Case 1: GET /hello returns 200, a text/html Content-Type and the body
+ *   'Hello world'
+ * - Case 2: GET /nonexistent returns 404 and carries no X-Powered-By header
  * 
- * Jest Testing Framework Features:
- * - Describe blocks for logical test grouping and organization
- * - beforeAll/afterAll hooks for test environment setup and cleanup
- * - Individual test cases using 'it' blocks with descriptive assertions
- * - Async/await support for handling asynchronous server operations
- * - Built-in assertion library for comprehensive response validation
+ * Jest Testing Framework Features Used:
+ * - A describe block for grouping
+ * - beforeAll/afterAll hooks driven by the done callback
+ * - 'it' blocks with async/await
+ * - The built-in expect assertion library
  * 
- * Integration Testing Scope:
- * - HTTP server startup and configuration validation
- * - Express.js middleware stack execution and request processing
+ * What This Suite Covers:
  * - Route matching and handler delegation through the routing hierarchy
- * - Response generation and content delivery to HTTP clients
- * - Error handling and appropriate status code generation
+ * - Middleware chain execution on the way to the handler
+ * - Response generation for one success path and one unmatched-route 404
  * 
- * Test Environment Considerations:
- * - Isolated test environment with ephemeral port allocation
- * - Clean server startup and shutdown for each test suite execution
+ * What It Does NOT Cover - all of it future work, most of it listed at the end
+ * of the describe block: non-GET methods, HEAD and OPTIONS, request-header and
+ * content-negotiation handling, concurrency, malformed requests, errorHandler's
+ * custom 500 envelope, security controls, load, and any timing or memory
+ * measurement.
+ * 
+ * Test Environment:
+ * - Ephemeral ports throughout, so parallel Jest workers cannot collide
+ * - Server startup and shutdown once per file execution, in the hooks
  * - No external dependencies or test data requirements
- * - Stateless testing approach ensuring test independence and repeatability
+ * - Stateless: the two cases are independent and repeatable in any order
  */
 describe('Hello API Endpoint', () => {
     /**
      * Server Startup Hook - beforeAll
      * 
-     * Starts the HTTP server on an ephemeral port before running any tests in this suite.
-     * This ensures the application is ready to accept requests and provides a clean
-     * testing environment isolated from other test suites or development servers.
+     * Opens the http.Server exported by server.js on an ephemeral port, once,
+     * before the two cases run. It is a lifecycle check and nothing more: the
+     * requests in this file are served by servers Supertest creates for itself,
+     * so no case depends on this hook beyond Jest waiting for its done() call.
      * 
      * Ephemeral Port Strategy:
-     * - Port 0 instructs the operating system to assign a random available port
-     * - Prevents port conflicts in CI/CD environments and parallel test execution
-     * - Ensures test isolation and independence from external services
-     * - Allows multiple test suites to run simultaneously without interference
+     * - listen(0) asks the operating system for any free port. The port is
+     *   OS-assigned rather than randomised by this code, and its value is never
+     *   read back here
+     * - Binding no fixed port keeps the hook clear of a development server on
+     *   config.port and of the ports other Jest workers hold
      * 
-     * Server Initialization Process:
-     * 1. HTTP server instance listens on OS-assigned ephemeral port
-     * 2. Express application becomes available for handling HTTP requests
-     * 3. All middleware and routing configurations are active and ready
-     * 4. Test execution can proceed with confidence in server availability
+     * What A Successful Bind Proves:
+     * 1. server.js can be imported without binding, because it guards its own
+     *    server.listen(config.port) with `require.main === module`
+     * 2. The exported object is a real, not-yet-listening http.Server, so this
+     *    hook's listen(0) is the first bind and cannot raise
+     *    ERR_SERVER_ALREADY_LISTEN
      * 
      * Asynchronous Testing Pattern:
      * - Uses Jest's done callback pattern for handling asynchronous operations
-     * - Server.listen() callback signals completion of server startup process
-     * - done() invocation informs Jest that async setup is complete
-     * - Prevents test execution until server is fully operational
+     * - The listen() callback runs after the socket is bound, and only on
+     *   success, and calls done() to release Jest
+     * - Jest fails the hook by timeout if that callback never runs
      * 
-     * Error Handling:
-     * - Server startup failures will cause test suite to fail immediately
-     * - Clear error reporting for debugging server configuration issues
-     * - Proper cleanup even in case of startup failures
-     * - Integration with Jest's error handling and reporting mechanisms
+     * Error Handling - what is NOT here:
+     * - This hook registers no 'error' listener and performs no cleanup. A bind
+     *   failure such as EADDRINUSE is delivered instead to the listener that
+     *   server.js installs on the same server object, which logs the failure
+     *   and then calls process.exit(1)
+     * - That terminates the Jest worker process, so a startup failure surfaces
+     *   as a dead worker rather than as a reported hook failure with cleanup
      * 
-     * Performance Considerations:
-     * - Startup time typically under 1 second for simple Express applications
-     * - Memory footprint minimal with basic middleware and single endpoint
-     * - CPU usage negligible during idle server state
-     * - Network resource allocation through ephemeral port assignment
+     * Performance - not measured:
+     * - Startup duration, memory footprint and CPU use are not recorded by any
+     *   assertion or instrumentation in this file
      * 
      * CI/CD Compatibility:
-     * - No hardcoded port dependencies preventing deployment conflicts
-     * - Automatic port detection suitable for containerized test environments
-     * - Parallel test execution support through isolated port allocation
-     * - Cloud CI/CD platform compatibility with dynamic port assignment
+     * - No hardcoded port, so a containerised or parallel run cannot collide
+     *   with another worker over this hook's port
      * 
      * @param {Function} done - Jest callback function to signal completion of async setup
      */
     beforeAll((done) => {
-        // Start the server on a random available port (port 0) to avoid conflicts
+        // Bind the imported server to an OS-assigned free port (port 0) so this
+        // hook cannot collide with a development server or another Jest worker
         // This is especially important in CI/CD environments where multiple tests
         // or services might be running simultaneously on the same machine
         server.listen(0, () => {
-            // Server is now listening and ready to accept HTTP requests
+            // The listener is bound; the suite's requests do not go to it
             // The done() callback signals to Jest that the asynchronous setup is complete
             done();
         });
@@ -147,54 +163,60 @@ describe('Hello API Endpoint', () => {
     /**
      * Server Shutdown Hook - afterAll
      * 
-     * Stops the HTTP server after all tests in this suite have finished executing.
-     * This ensures proper resource cleanup and allows the test process to exit
-     * cleanly without hanging connections or resource leaks.
+     * Closes the listener that beforeAll opened, after both cases have run.
+     * That is the whole of it: one server.close() on the imported server, which
+     * releases its port and lets the Jest worker exit without a handle still
+     * open.
      * 
-     * Cleanup Operations:
-     * - Closes all active HTTP connections and prevents new connections
-     * - Releases the network port allocated during server startup
-     * - Deallocates server-related memory and system resources
-     * - Ensures clean test environment reset for subsequent test suites
+     * What close() Does:
+     * - Stops the server accepting new connections and invokes the callback once
+     *   the connections it already had have ended
+     * - Frees the OS-assigned port taken in beforeAll
+     * - Leaves the Supertest servers alone. Each of those is created and torn
+     *   down inside its own request, so none of them is this hook's concern
      * 
-     * Resource Management:
-     * - Prevents memory leaks from persistent server instances
-     * - Releases network ports for reuse by other processes
-     * - Cleans up event listeners and timers associated with server
-     * - Ensures proper garbage collection of server-related objects
+     * What It Does Not Do:
+     * - It removes no event listener and clears no timer. The listeners
+     *   server.js attached to this server object stay attached
+     * - It does not control garbage collection; releasing the last reference to
+     *   the server is left to the runtime once the module scope goes away
      * 
-     * Test Process Lifecycle:
-     * - Allows Jest test runner to exit cleanly after test completion
-     * - Prevents hanging Node.js processes in CI/CD environments
-     * - Ensures proper test isolation between different test suite executions
-     * - Maintains clean state for subsequent test runs
+     * Why It Still Matters:
+     * - Jest reports a worker that finishes with an open listener as a leaked
+     *   handle, and in CI a hanging worker is what stalls the run
+     * - The port itself is not the risk: it was OS-assigned, so a later
+     *   listen(0) elsewhere simply takes a different free port. What does fail
+     *   is calling listen(0) again on this same still-listening server, which
+     *   raises ERR_SERVER_ALREADY_LISTEN
      * 
-     * Error Handling:
-     * - Server.close() callback provides error handling for shutdown failures
-     * - Proper error reporting if server cannot be gracefully shut down
-     * - Timeout handling for servers that don't respond to close requests
-     * - Integration with Jest's cleanup and error reporting mechanisms
+     * Error Handling - what is NOT here:
+     * - server.close() passes an Error as the first argument of its callback:
+     *   undefined on success, and code ERR_SERVER_NOT_RUNNING if the server was
+     *   not listening. The callback below declares no parameter, so that
+     *   argument is discarded and a close failure is never reported
+     * - A close that never completes therefore surfaces as a Jest hook timeout
+     *   rather than as an error message. No close timeout and no forced socket
+     *   destruction is implemented here
      * 
-     * Performance Impact:
-     * - Minimal shutdown time for simple Express applications (< 100ms)
-     * - No blocking operations during graceful shutdown process
-     * - Efficient resource deallocation without memory fragmentation
-     * - Clean process termination enabling fast test suite completion
+     * Performance - not measured:
+     * - Shutdown duration is not timed or asserted anywhere in this file
      * 
-     * Production Testing Patterns:
-     * - Demonstrates proper server lifecycle management for production deployments
-     * - Shows graceful shutdown patterns for container orchestration
-     * - Provides foundation for health check and readiness probe implementations
-     * - Establishes patterns for zero-downtime deployment scenarios
+     * Not A Production Shutdown Pattern:
+     * - This hook handles no signals, and neither this file nor the application
+     *   registers a SIGTERM or SIGINT handler anywhere. Nothing here shows the
+     *   drain-on-signal behaviour a container runtime would trigger, and nothing
+     *   here demonstrates a zero-downtime deployment
+     * - It closes one test listener. Read it as that and nothing wider
      * 
      * @param {Function} done - Jest callback function to signal completion of async cleanup
      */
     afterAll((done) => {
-        // Close the server and clean up resources
-        // This ensures the test process can exit cleanly and doesn't leave
-        // hanging connections or allocated ports
+        // Close the listener opened in beforeAll so its port is released and the
+        // Jest worker can exit without an open handle. The callback declares no
+        // error parameter, so a close failure would surface as a hook timeout
+        // rather than as a reported error
         server.close(() => {
-            // Server has been successfully shut down and all resources cleaned up
+            // The listener is closed and its port released
             // The done() callback signals to Jest that the asynchronous cleanup is complete
             done();
         });
@@ -203,10 +225,11 @@ describe('Hello API Endpoint', () => {
     /**
      * Success Path Integration Test - GET /hello Endpoint
      * 
-     * Tests the successful response of the GET /hello endpoint, validating the complete
-     * request-response cycle from HTTP client through server processing to response delivery.
-     * This test verifies that all system components work together correctly to deliver
-     * the expected functionality.
+     * Sends one real HTTP GET to /hello and checks the response. The request
+     * travels over loopback into a server Supertest owns, not into the server
+     * the hooks opened, so what this case exercises is the composed Express
+     * application: its middleware chain, its routing, and the response that
+     * res.send('Hello world') produces.
      * 
      * Test Scenario Coverage:
      * - HTTP GET request processing and routing
@@ -215,12 +238,15 @@ describe('Hello API Endpoint', () => {
      * - HTTP status code and header generation
      * - Response content delivery and format validation
      * 
-     * Supertest Integration:
-     * - Creates HTTP client instance configured for the Express app
-     * - Sends real HTTP requests through the complete networking stack
-     * - Provides comprehensive assertion methods for response validation
-     * - Handles async request processing with Promise-based patterns
-     * - Integrates seamlessly with Jest's async testing capabilities
+     * How Supertest Reaches The App:
+     * - request(app) receives the Express application, which is a function, so
+     *   Supertest wraps it in http.createServer(app) of its own
+     * - That server is bound with listen(0) on first use, giving the request its
+     *   own ephemeral port, distinct from the one beforeAll took
+     * - The exchange is therefore genuine HTTP over 127.0.0.1 rather than an
+     *   in-memory shortcut, and that server is torn down with the request
+     * - Assertions chain off the request and resolve as a Promise, which the
+     *   async test body awaits
      * 
      * Request Processing Flow Validation:
      * 1. HTTP GET request sent to /hello endpoint
@@ -232,11 +258,12 @@ describe('Hello API Endpoint', () => {
      * 7. Response sent back through middleware stack to client
      * 8. Test assertions validate complete response
      * 
-     * Response Validation Assertions:
-     * - HTTP status code verification (200 OK)
-     * - Content-Type header validation (text/html)
-     * - Response body content exact match verification
-     * - Response timing and performance characteristics
+     * Response Validation Assertions - what this case actually asserts:
+     * - HTTP status code is 200, asserted twice: once in the Supertest chain and
+     *   once explicitly on the resolved response
+     * - Content-Type matches text/html, also asserted twice
+     * - Response body is exactly 'Hello world', also asserted twice
+     * - Nothing about timing; see the response.duration note below
      * 
      * Requirements Verification:
      * - TC-003: Validates the /hello API endpoint functionality
@@ -245,37 +272,50 @@ describe('Hello API Endpoint', () => {
      * - F-002-RQ-002: Tests exact "Hello world" text requirement
      * - F-004-RQ-003: Validates response body content delivery
      * 
-     * Performance Validation:
-     * - Response time should be under 100ms (F-002 performance criteria)
-     * - Memory usage should remain minimal during request processing
-     * - No resource leaks or connection handling issues
-     * - Efficient request throughput with minimal latency
+     * Performance Validation - not performed here:
+     * - F-002 sets a sub-100ms budget and the guard below names it, but the
+     *   guard never runs: supertest 7.1.1 leaves response.duration undefined,
+     *   so its condition is false and the assertion inside it is skipped. This
+     *   case is not evidence of response time
+     * - No memory, throughput, connection-reuse or leak measurement exists in
+     *   this file. Endpoint latency is measured outside the suite instead, by
+     *   timing requests against a running process
      * 
-     * Security Validation:
-     * - No sensitive information disclosure in response headers
-     * - Proper HTTP protocol compliance and security headers
-     * - Input validation and sanitization (minimal for GET request)
-     * - No vulnerability exposure through error responses
+     * Security Validation - none performed by this case:
+     * - This case makes no security assertion at all. The only security-related
+     *   assertion in the file is the X-Powered-By absence check in the 404 case
+     *   below, and it passes because app.js calls app.disable('x-powered-by')
+     *   for the whole application
+     * - No input validation or sanitization runs on the way to the handler. The
+     *   application mounts requestLogger, the aggregated router and errorHandler
+     *   and nothing else - there is no body parser and no validation layer to
+     *   exercise, and the handler reads no request input
+     * - No security-header middleware exists. The observed response carries
+     *   Content-Type, Content-Length, ETag, Date and Connection only, so no
+     *   assertion here could confirm one
      * 
-     * Edge Case Considerations:
-     * - Request header variations and their handling
-     * - Query parameter handling (should be ignored for this endpoint)
-     * - HTTP/1.1 protocol compliance and keep-alive behavior
-     * - Concurrent request handling and thread safety
+     * Edge Cases - none exercised by this case:
+     * - The request sets no custom header and carries no query string, so
+     *   header variation and query handling are untested
+     * - One request is sent, so keep-alive reuse and concurrent handling are
+     *   untested
+     * - These stay future items; the list at the end of the describe block
+     *   carries them
      * 
      * @returns {Promise<void>} Promise that resolves when all assertions pass
      */
     it('should return 200 OK with \'Hello world\' for GET /hello', async () => {
         // Send HTTP GET request to /hello endpoint using Supertest
-        // Supertest creates a real HTTP client and sends the request through
-        // the complete networking stack to test the actual server behavior
+        // Supertest wraps the exported app in an http.Server of its own, binds
+        // it to an ephemeral port and issues a real request over loopback; the
+        // server the hooks opened is not the target
         const response = await request(app)
             .get('/hello')
             .expect(200) // Assert HTTP status code is 200 (OK)
             .expect('Content-Type', /text\/html/) // Assert Content-Type header includes 'text/html'
             .expect('Hello world'); // Assert response body text is exactly 'Hello world'
 
-        // Additional explicit assertions for comprehensive validation
+        // Repeat the three chain assertions on the resolved response object
         // These provide more detailed error messages and explicit test coverage
         
         // Verify the response status code explicitly
@@ -287,9 +327,10 @@ describe('Hello API Endpoint', () => {
         // Verify the Content-Type header is set appropriately by Express
         expect(response.headers['content-type']).toMatch(/text\/html/);
         
-        // Performance assertion - response should be fast
-        // Note: response.duration might not be available in all Supertest versions
-        // This demonstrates performance awareness in testing
+        // Inert timing guard, kept deliberately: supertest 7.1.1 never sets
+        // response.duration, so the condition below is always false and the
+        // assertion never executes. It records the intended budget, not a
+        // measurement - nothing here evidences response time
         if (response.duration !== undefined) {
             expect(response.duration).toBeLessThan(100); // Should respond in under 100ms
         }
@@ -298,85 +339,95 @@ describe('Hello API Endpoint', () => {
     /**
      * Error Handling Integration Test - Non-existent Route
      * 
-     * Tests the application's handling of requests to routes that do not exist,
-     * validating the error handling middleware and 404 response generation.
-     * This test ensures the application gracefully handles invalid requests
-     * and provides appropriate error responses.
+     * Sends a GET to a path no router matches and checks the status. What
+     * answers it is Express's own built-in final handler, reached because the
+     * router stack ran out of matches.
      * 
-     * Error Handling Architecture Validation:
-     * - Express.js built-in 404 handling for unmatched routes
-     * - Error middleware stack execution for unhandled requests
-     * - Proper HTTP status code generation for missing resources
-     * - Error response format and content validation
+     * What This Exercises, And What It Does Not:
+     * - Exercised: Express's built-in 404 for an unmatched route, and the
+     *   absence of the X-Powered-By header on that response
+     * - NOT exercised: errorHandler, the four-argument middleware app.js
+     *   registers last. Express routes to a four-argument handler only when a
+     *   handler throws or calls next(err), and an unmatched route does neither,
+     *   so errorHandler never runs here and its JSON envelope is never produced.
+     *   That middleware is covered by tests/unit/errorHandler.test.js, which
+     *   invokes it directly
+     * - NOT exercised: any custom 404 handler, because the application
+     *   registers none
      * 
-     * 404 Error Scenario Testing:
-     * - Request to non-existent endpoint path
-     * - Verification that no route handler is matched
-     * - Confirmation that 404 status is returned to client
-     * - Validation that error response is properly formatted
+     * 404 Scenario Steps:
+     * - Request /nonexistent, a path neither the aggregated router nor the
+     *   /hello router declares
+     * - No handler matches, so the request falls through the whole stack
+     * - Express's final handler responds 404 with an HTML body
      * 
      * Requirements Verification:
      * - F-003-RQ-004: Tests that server returns 404 for non-existent routes
-     * - Error Response Management: Validates structured error processing
      * - HTTP Protocol Compliance: Ensures proper status code usage
-     * - Client Error Handling: Provides appropriate feedback for invalid requests
+     * - Client Error Handling: an unmatched request terminates with a status
+     *   rather than hanging or reaching the success path
      * 
-     * Security Considerations:
-     * - No sensitive information disclosure in error responses
-     * - Generic error messages prevent information leakage
-     * - No stack traces or internal details exposed to clients
-     * - Consistent error response format across all 404 scenarios
+     * The One Security Property This Case Asserts:
+     * - X-Powered-By is absent from the response. That holds because app.js
+     *   disables the header for the whole application rather than per route,
+     *   and it is the only security-related assertion in this file
+     * - Nothing else is asserted. The response body is never inspected, and
+     *   Express's default 404 page echoes the request method and path back to
+     *   the client, so this case is not evidence that error output withholds
+     *   request or implementation detail
      * 
-     * Error Response Format:
-     * - HTTP 404 Not Found status code
-     * - Appropriate error headers set by Express
-     * - Generic error message without implementation details
-     * - Consistent format matching application error handling patterns
+     * Observed Error Response Shape - status asserted, body not:
+     * - HTTP 404 Not Found, produced by Express's built-in final handler
+     * - Content-Type: text/html; charset=utf-8, with an HTML body whose <pre>
+     *   element reads "Cannot GET /nonexistent"
+     * - No JSON envelope: errorHandler's { error, status, timestamp, path }
+     *   response is not produced on this path
      * 
      * Testing Strategy:
      * - Uses a clearly non-existent route path for testing
-     * - Validates only the essential error response characteristics
-     * - Avoids testing implementation-specific error details
-     * - Focuses on client-facing behavior rather than internal mechanisms
+     * - Asserts the status and one header, and deliberately not the body, whose
+     *   HTML Express may change between versions
      * 
-     * Performance Considerations:
-     * - 404 responses should be generated quickly (< 50ms)
-     * - No unnecessary processing for obviously invalid routes
-     * - Efficient route matching failure detection
-     * - Minimal resource consumption for error responses
+     * Performance Considerations - not measured:
+     * - The guard below names a sub-50ms budget but never runs, for the same
+     *   response.duration reason as the success case. No resource or throughput
+     *   figure is recorded
      * 
-     * Integration with Express Error Handling:
-     * - Tests the complete Express error handling pipeline
-     * - Validates error middleware execution for unmatched routes
-     * - Confirms proper error response generation and delivery
-     * - Ensures error handling doesn't interfere with valid requests
+     * Relationship To The Error Middleware:
+     * - This case does not reach errorHandler, so it says nothing about the
+     *   error-handling chain beyond Express's default for an unmatched route
+     * - It is also the last case in the file, and no request follows it, so it
+     *   is not evidence that the application still serves traffic after a 404
      * 
      * @returns {Promise<void>} Promise that resolves when all assertions pass
      */
     it('should return 404 Not Found for a non-existent route', async () => {
         // Send HTTP GET request to a deliberately non-existent endpoint
-        // This tests the application's error handling for unmatched routes
+        // This exercises Express's built-in handling for an unmatched route,
+        // not the application's own errorHandler middleware
         const response = await request(app)
             .get('/nonexistent')
             .expect(404); // Assert HTTP status code is 404 (Not Found)
 
-        // Additional explicit assertions for comprehensive error handling validation
+        // Repeat the status assertion on the resolved response object
         
         // Verify the response status code explicitly for clear test reporting
         expect(response.status).toBe(404);
         
-        // The response body content for 404 errors is typically handled by Express
-        // and may vary, so we focus on the status code rather than specific content
-        // This approach makes the test more robust and less brittle
+        // The 404 body is Express's own HTML error page and is not asserted: it
+        // reads "Cannot GET /nonexistent" today and may change with the
+        // framework version
         
-        // Verify that the response is received promptly
-        // 404 responses should be fast since no complex processing is required
+        // Inert timing guard again: response.duration is undefined under
+        // supertest 7.1.1, so the assertion below never executes
         if (response.duration !== undefined) {
             expect(response.duration).toBeLessThan(50); // Should respond in under 50ms
         }
         
-        // Optional: Verify that no unexpected headers are present
-        // This helps ensure the error response doesn't leak sensitive information
+        // Assert the framework fingerprint is absent: app.js disables
+        // x-powered-by globally, so no response advertises Express. This is the
+        // only security-related assertion in the file - the body is not
+        // inspected and no other header is checked.
         expect(response.headers['x-powered-by']).toBeUndefined(); // Should not expose framework details
     });
 
@@ -413,30 +464,35 @@ describe('Hello API Endpoint', () => {
 /**
  * Integration Test File Documentation Summary
  * 
- * This integration test file implements comprehensive end-to-end testing for the
- * Node.js tutorial application's /hello endpoint, demonstrating enterprise-grade
- * testing practices while maintaining educational clarity and simplicity.
+ * This file holds two integration cases for the Node.js tutorial application's
+ * /hello endpoint, plus a server open/close check in the hooks. It is teaching
+ * material, so the annotations above state what the code does rather than what
+ * an integration suite might do.
  * 
- * Key Implementation Achievements:
- * - Complete integration testing using Jest and Supertest frameworks
- * - Proper server lifecycle management with setup and teardown procedures
- * - Comprehensive test coverage for success and error scenarios
- * - Real HTTP request processing through the complete application stack
- * - Performance-aware testing with response time validation
+ * What Is Implemented:
+ * - Two cases driven with Jest and Supertest: GET /hello asserted on status,
+ *   Content-Type and exact body; GET /nonexistent asserted on status and the
+ *   absence of X-Powered-By
+ * - A beforeAll/afterAll pair that opens the imported server on an ephemeral
+ *   port and closes it, independently of those two cases
+ * - Real HTTP requests over loopback, each against a server Supertest creates
+ *   around the exported app
+ * - Two timing guards that are inert by design, because supertest 7.1.1 does
+ *   not populate response.duration
  * 
  * Educational Impact:
  * - Provides clear example of integration testing patterns for Node.js applications
  * - Demonstrates proper HTTP endpoint testing with Supertest library
- * - Shows server lifecycle management during automated testing scenarios
- * - Establishes foundation for understanding enterprise testing strategies
+ * - Shows how a server's open/close lifecycle is driven from a test hook
  * - Illustrates transition from unit tests to integration tests
  * 
- * Production Readiness:
- * - Follows Node.js and Express.js testing best practices
- * - Implements comprehensive error handling and edge case coverage
+ * Maturity:
+ * - Follows Node.js and Express.js testing practices for request assertions
+ * - Covers one success path and one unmatched-route 404; error and edge-case
+ *   coverage beyond those two is future work
  * - Uses stable versions of testing frameworks for reliability
  * - Includes extensive documentation for maintainability and learning
- * - Provides scalable foundation for expanded testing scenarios
+ * - Provides a foundation the future cases listed below can be added to
  * 
  * Requirements Compliance:
  * - TC-003: Test case for /hello API endpoint ✓
@@ -449,8 +505,9 @@ describe('Hello API Endpoint', () => {
  * - Jest v29+ for test organization, execution, and assertion
  * - Supertest v7.1.1 for HTTP endpoint testing and validation
  * - Async/await patterns for modern JavaScript testing
- * - Comprehensive assertion coverage for response validation
- * - Performance monitoring integration for response time tracking
+ * - Status and header assertions on both cases; an exact body assertion on
+ *   GET /hello only
+ * - No performance monitoring: the response.duration guards never execute
  * 
  * Future Enhancement Opportunities:
  * - Additional HTTP method testing (POST, PUT, DELETE)
@@ -459,7 +516,8 @@ describe('Hello API Endpoint', () => {
  * - Security testing for input validation and error handling
  * - Load testing integration for scalability assessment
  * 
- * This implementation successfully bridges the gap between educational tutorials
- * and production-ready integration testing, providing learners with practical
- * experience in enterprise-grade Node.js testing strategies and patterns.
+ * Read as teaching material, this file shows how an integration case is written
+ * and how a server's lifecycle is driven from a hook, at the scale the tutorial
+ * needs: two cases, scoped honestly, with wider coverage left listed as future
+ * work.
  */

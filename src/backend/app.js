@@ -27,9 +27,21 @@
  * - F-002: Hello Endpoint Response (makes the /hello route reachable)
  * - F-003: Request Processing (middleware chain composition)
  *
+ * The export is annotated with the built-in Function type rather than an
+ * Express-specific type symbol: Express 5.1.0 publishes no TypeScript
+ * declarations, no declaration package for it is a dependency of this project
+ * and none may be added, so such a symbol would not resolve for any reader or
+ * tool. Function is accurate as well as resolvable - an Express application is
+ * a callable request listener, which is exactly why server.js can hand it
+ * straight to http.createServer().
+ *
  * @module app
- * @type {import('express').Express}
+ * @type {Function}
  */
+
+// A CommonJS script is not strict unless it says so, and .eslintrc.js enables
+// strict: ['error', 'global'], so the directive is declared explicitly here.
+'use strict';
 
 // Express web framework - provides the application object, routing and
 // response helpers
