@@ -1,5 +1,6 @@
 // Jest Configuration for Node.js Tutorial Application
-// Jest Testing Framework - Version: Latest
+// Jest Testing Framework - Version: 29.7.0 (the 29.x line, whose engine range
+// contains this package's declared Node floor of >=18.0.0)
 // Configured for Node.js v22.16.0 LTS environment with Express.js 5.1.0
 
 /**
@@ -34,16 +35,22 @@ module.exports = {
   coverageDirectory: 'coverage',
 
   // Coverage Collection Sources
-  // Defines which files to include/exclude from coverage analysis
-  // Includes all backend source files while excluding configuration and test files
+  // Defines which files to include in coverage analysis. These globs resolve
+  // relative to rootDir, which defaults to the directory holding this file
+  // (src/backend) - so they must NOT be prefixed with 'src/backend/', or they
+  // resolve to src/backend/src/backend/**/*.js and match zero files, failing the
+  // thresholds below on empty instrumentation.
+  //
+  // The includes are targeted rather than a blanket '**/*.js' on purpose: a
+  // blanket include also instruments the generated HTML report under
+  // coverage/lcov-report/ on every run after the first (Jest's default
+  // coveragePathIgnorePatterns excludes node_modules but not coverageDirectory),
+  // which collapses the global figures even when every source module is at 100%.
+  // Naming the two source directories keeps the measurement stable and makes the
+  // separate server.js / app.js / config / logger negations unnecessary.
   collectCoverageFrom: [
-    'src/backend/**/*.js',           // Include all backend JavaScript files
-    '!src/backend/server.js',        // Exclude main server entry point
-    '!src/backend/app.js',           // Exclude main application file
-    '!src/backend/jest.config.js',   // Exclude this configuration file
-    '!src/backend/tests/**/*.js',    // Exclude all test files
-    '!src/backend/config/**/*.js',   // Exclude configuration files
-    '!src/backend/utils/logger.js'   // Exclude logger utility
+    'middleware/**/*.js',            // Cross-cutting request logging and error handling
+    'routes/**/*.js'                 // Route aggregator and the /hello endpoint handler
   ],
 
   // Coverage Thresholds

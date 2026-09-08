@@ -54,12 +54,12 @@
  */
 
 // Core Node.js module imports for HTTP server functionality
-const http = require('http'); // Node.js v22.16.01 - Built-in HTTP server module with HTTP/1.1 support
+const http = require('http'); // Node.js v22.16.0 - Built-in HTTP server module with HTTP/1.1 support
 
 // Internal application imports for modular architecture integration
 const app = require('./app'); // Express.js application instance configured with routes and middleware
 const config = require('./config'); // Centralized configuration management with environment variable support
-const logger = require('./utils/logger'); // Structured logging utility for server events and monitoring
+const { logger } = require('./utils/logger'); // Structured logging utility for server events and monitoring (named export)
 
 /**
  * HTTP Server Instance Creation
@@ -171,68 +171,80 @@ const server = http.createServer(app);
  * - Illustrates asynchronous server startup patterns
  * - Provides foundation for understanding server lifecycle management
  */
-server.listen(config.port, () => {
-    /**
-     * Server Startup Success Callback
-     * 
-     * Executes upon successful server startup and port binding, providing
-     * confirmation that the HTTP server is operational and ready to accept
-     * incoming client connections. This callback implements startup success
-     * logging and status reporting for monitoring and debugging purposes.
-     * 
-     * Startup Success Validation:
-     * - Server successfully bound to configured port
-     * - Network socket allocated and listening
-     * - Express application integrated and ready
-     * - Event loop processing incoming connections
-     * - HTTP request/response cycle operational
-     * 
-     * Success Logging Implementation:
-     * - Structured log entry with server status information
-     * - Port number confirmation for network connectivity verification
-     * - Environment context (development/production) indication
-     * - Timestamp marking for startup performance analysis
-     * - Process ID logging for multi-instance deployment tracking
-     * 
-     * Monitoring Integration:
-     * - Server readiness indication for health checks
-     * - Startup time measurement for performance monitoring
-     * - Resource utilization baseline establishment
-     * - Service discovery registration trigger point
-     * - Load balancer health check endpoint availability
-     * 
-     * Development Environment Support:
-     * - Clear console output for developer feedback
-     * - Port accessibility confirmation for local testing
-     * - Application URL generation for browser access
-     * - Development tool integration signals
-     * - Hot reload capability indication
-     * 
-     * Production Readiness Indicators:
-     * - Service availability confirmation
-     * - Health check endpoint responsiveness
-     * - Monitoring system integration points
-     * - Container orchestration readiness signals
-     * - Load balancer registration capability
-     * 
-     * Requirements Fulfillment:
-     * - F-001-RQ-001: Server startup capability (Success confirmation)
-     * - F-001-RQ-003: Port configuration (Port binding verification)
-     * - Server Status Reporting: Operational status communication
-     * - Development Feedback: Clear startup success indication
-     * 
-     * Educational Value:
-     * - Demonstrates callback pattern for asynchronous operations
-     * - Shows proper success logging implementation
-     * - Illustrates server lifecycle event handling
-     * - Provides template for production monitoring integration
-     */
-    logger.info(`🚀 HTTP Server successfully started and listening on port ${config.port}`);
-    logger.info(`🌐 Server is ready to accept HTTP requests`);
-    logger.info(`📍 Local development URL: http://localhost:${config.port}`);
-    logger.info(`⚡ Node.js ${process.version} | Express 5.1.0 | Environment: ${config.nodeEnv}`);
-    logger.info(`🎯 Tutorial application initialized successfully`);
-});
+
+/**
+ * Direct-Execution Guard
+ *
+ * The port is bound only when this file is the process entry point
+ * (`node server.js` / `npm start`). When the module is imported instead - as
+ * tests/integration/hello.test.js does - it must NOT bind, so the importer can
+ * call server.listen(0) itself and take an OS-assigned ephemeral port. Binding
+ * at import time would make that second listen() throw ERR_SERVER_ALREADY_LISTEN.
+ */
+if (require.main === module) {
+    server.listen(config.port, () => {
+        /**
+         * Server Startup Success Callback
+         * 
+         * Executes upon successful server startup and port binding, providing
+         * confirmation that the HTTP server is operational and ready to accept
+         * incoming client connections. This callback implements startup success
+         * logging and status reporting for monitoring and debugging purposes.
+         * 
+         * Startup Success Validation:
+         * - Server successfully bound to configured port
+         * - Network socket allocated and listening
+         * - Express application integrated and ready
+         * - Event loop processing incoming connections
+         * - HTTP request/response cycle operational
+         * 
+         * Success Logging Implementation:
+         * - Structured log entry with server status information
+         * - Port number confirmation for network connectivity verification
+         * - Environment context (development/production) indication
+         * - Timestamp marking for startup performance analysis
+         * - Process ID logging for multi-instance deployment tracking
+         * 
+         * Monitoring Integration:
+         * - Server readiness indication for health checks
+         * - Startup time measurement for performance monitoring
+         * - Resource utilization baseline establishment
+         * - Service discovery registration trigger point
+         * - Load balancer health check endpoint availability
+         * 
+         * Development Environment Support:
+         * - Clear console output for developer feedback
+         * - Port accessibility confirmation for local testing
+         * - Application URL generation for browser access
+         * - Development tool integration signals
+         * - Hot reload capability indication
+         * 
+         * Production Readiness Indicators:
+         * - Service availability confirmation
+         * - Health check endpoint responsiveness
+         * - Monitoring system integration points
+         * - Container orchestration readiness signals
+         * - Load balancer registration capability
+         * 
+         * Requirements Fulfillment:
+         * - F-001-RQ-001: Server startup capability (Success confirmation)
+         * - F-001-RQ-003: Port configuration (Port binding verification)
+         * - Server Status Reporting: Operational status communication
+         * - Development Feedback: Clear startup success indication
+         * 
+         * Educational Value:
+         * - Demonstrates callback pattern for asynchronous operations
+         * - Shows proper success logging implementation
+         * - Illustrates server lifecycle event handling
+         * - Provides template for production monitoring integration
+         */
+        logger.info(`🚀 HTTP Server successfully started and listening on port ${config.port}`);
+        logger.info(`🌐 Server is ready to accept HTTP requests`);
+        logger.info(`📍 Local development URL: http://localhost:${config.port}`);
+        logger.info(`⚡ Node.js ${process.version} | Express 5.1.0 | Environment: ${config.nodeEnv}`);
+        logger.info(`🎯 Tutorial application initialized successfully`);
+    });
+}
 
 /**
  * Server Error Event Handler
@@ -472,7 +484,7 @@ process.on('uncaughtException', (error) => {
  * - Comprehensive error handling with specific error condition detection
  * - Environment-aware configuration management with fallback defaults
  * - Production-ready logging and monitoring integration points
- * - Graceful startup and shutdown procedures with proper resource management
+ * - Graceful startup procedures with proper resource management and fault reporting
  * 
  * Educational Impact:
  * - Provides clear example of Node.js HTTP server creation and management
@@ -498,3 +510,16 @@ process.on('uncaughtException', (error) => {
  * and production-ready server development, providing learners with practical
  * experience in enterprise-grade Node.js server architecture and deployment patterns.
  */
+
+/**
+ * HTTP Server Export
+ *
+ * Exported unconditionally, independently of the listen guard above, so that
+ * importers receive a real http.Server instance that is not yet listening.
+ * tests/integration/hello.test.js relies on exactly this: it requires the module,
+ * calls server.listen(0) in beforeAll and server.close() in afterAll.
+ *
+ * @module server
+ * @type {import('http').Server}
+ */
+module.exports = server;
