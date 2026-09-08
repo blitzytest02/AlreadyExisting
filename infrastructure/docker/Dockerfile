@@ -17,7 +17,7 @@ WORKDIR /usr/src/app
 
 # Copy package management files first for optimal Docker layer caching
 # This allows Docker to cache the npm install step when only source code changes
-COPY package.json package-lock.json ./
+COPY src/backend/package.json src/backend/package-lock.json ./
 
 # Install all dependencies (including devDependencies for potential build steps)
 # Using npm ci for faster, reliable, reproducible builds in production environments
@@ -27,7 +27,7 @@ RUN npm ci --include=dev \
 
 # Copy the entire src/backend directory into the container
 # This includes all source code files needed for the application
-COPY src/backend/ ./
+COPY src/backend/ ./src/backend/
 
 # =============================================================================
 # STAGE 2: Production Stage  
