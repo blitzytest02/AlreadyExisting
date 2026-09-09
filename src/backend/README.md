@@ -490,7 +490,7 @@ curl -i -X POST http://localhost:3000/hello
 ### Current Security Implementation
 
 - **No Consumed Input**: the hello handler reads no path parameters, query values or request body and returns a constant response, so no request data is reflected back. Requests can still carry a query string, headers and a body — Express matches `/hello?anything` and exposes `req.query`, and `middleware/requestLogger.js` records the request's original URL — so treat request data as untrusted in any handler you add
-- **Error Handling**: Secure error responses without information disclosure
+- **Error Handling**: Secure error responses without information disclosure — the 500 envelope carries a generic message, never the error text or a stack trace. The server-side log record is held to the same standard: `middleware/errorHandler.js` passes request header values through an allow-list (`host`, `user-agent`, `accept`, `content-type`, `content-length`), recording every other header's name with the literal `[REDACTED]` in place of its value, and records the stack trace only when `NODE_ENV` is `development`, so no credential-bearing header value and no absolute host filesystem path is written to a production log
 - **Dependencies**: Regular security updates using `npm audit`
 - **Transport**: HTTP only (suitable for local development)
 

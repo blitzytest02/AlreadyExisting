@@ -8,7 +8,8 @@
  * 
  * Key Features:
  * - Catches all application errors including unhandled promise rejections
- * - Provides comprehensive error logging for debugging and monitoring
+ * - Provides error logging for debugging and monitoring, redacted so the log
+ *   record discloses no more than it needs to
  * - Sends standardized, generic JSON responses to prevent information leakage
  * - Serves as the terminal middleware in the error handling chain
  * - Leverages Express 5's automatic promise rejection forwarding
@@ -17,6 +18,11 @@
  * - Generic error messages prevent exposure of sensitive implementation details
  * - Detailed error information is logged server-side only
  * - No stack traces or internal error details sent to clients
+ * - The server-side log record is held to the same least-privilege standard as
+ *   the client response: request headers are recorded through a redacting
+ *   allow-list, so no credential-bearing header value reaches the log, and the
+ *   stack trace is gated to the development environment, so absolute host
+ *   filesystem paths are not written to a production log
  * 
  * Requirements Addressed:
  * - F-001-RQ-004: Graceful error handling for server startup and runtime errors
@@ -35,6 +41,103 @@
 // Logger provides environment-aware logging with proper formatting
 const { logger } = require('../utils/logger');
 
+// Import the application configuration to read the current environment.
+// config is the single process.env reader in this application, so gating log
+// detail on the environment needs no direct process.env access and no new
+// dependency here. The value is read at invocation time rather than captured
+// at module load, so a change to config.nodeEnv is honoured immediately.
+const config = require('../config');
+
+/**
+ * Request header names whose values are safe to record verbatim in the log
+ *
+ * Header values are caller-controlled and routinely carry credentials, so the
+ * log record allow-lists rather than deny-lists them. A deny-list of the
+ * headers known today (authorization, cookie, proxy-authorization, x-api-key)
+ * still writes out the value of any credential header nobody enumerated -
+ * x-auth-token, x-amz-security-token or a bespoke one - whereas an allow-list
+ * is closed by default: a header absent from this list can never contribute
+ * its value to a log line, whoever invented it.
+ *
+ * The five names here are the request metadata actually useful for reproducing
+ * a server error, and none of them is a credential carrier.
+ *
+ * Names are compared lower-cased. Node lower-cases incoming header names on
+ * req.headers already; the normalisation also covers a hand-built request
+ * object, such as the one a unit test supplies.
+ *
+ * @constant {string[]}
+ */
+const LOGGABLE_HEADER_NAMES = [
+    'host',
+    'user-agent',
+    'accept',
+    'content-type',
+    'content-length'
+];
+
+/**
+ * Substituted for the value of any request header outside the allow-list
+ *
+ * The header NAME is still recorded. Replacing only the value keeps the record
+ * useful for debugging - an operator can see which headers the caller sent -
+ * without the value itself ever reaching the log.
+ *
+ * @constant {string}
+ */
+const REDACTED_VALUE = '[REDACTED]';
+
+/**
+ * Substituted for the stack trace outside the development environment
+ *
+ * A V8 stack trace names an absolute filesystem path for every frame, which
+ * discloses the deployment's directory layout and dependency locations to
+ * anyone who can read the log. Recording an explicit marker rather than
+ * omitting the field keeps the record's shape identical in every environment,
+ * so a reader can tell the stack was withheld deliberately rather than lost.
+ *
+ * @constant {string}
+ */
+const STACK_OMITTED_VALUE = '[stack omitted outside development]';
+
+/**
+ * Builds the loggable view of a request's headers
+ *
+ * Returns a NEW object rather than mutating the request: req.headers is live
+ * request state that later middleware and the response path may still read,
+ * so redaction must not be applied in place.
+ *
+ * @function sanitizeRequestHeaders
+ * @param {Object} headers - The request's header bag, normally req.headers.
+ *                           A missing or non-object value is tolerated.
+ * @returns {Object} A new object carrying every header name from the input,
+ *                   with allow-listed values preserved and every other value
+ *                   replaced by REDACTED_VALUE. An empty object when the input
+ *                   is not a usable header bag.
+ *
+ * @example
+ * sanitizeRequestHeaders({ host: 'localhost:3000', authorization: 'Bearer x' });
+ * // => { host: 'localhost:3000', authorization: '[REDACTED]' }
+ */
+function sanitizeRequestHeaders(headers) {
+    // This middleware is the terminal error handler, so it must never throw
+    // itself - an error raised here has nowhere left to be handled. A request
+    // stand-in without a header bag would make Object.keys throw, so guard it.
+    if (!headers || typeof headers !== 'object') {
+        return {};
+    }
+
+    const sanitized = {};
+
+    for (const name of Object.keys(headers)) {
+        sanitized[name] = LOGGABLE_HEADER_NAMES.includes(name.toLowerCase())
+            ? headers[name]
+            : REDACTED_VALUE;
+    }
+
+    return sanitized;
+}
+
 /**
  * Express Error Handling Middleware Function
  * 
@@ -44,13 +147,14 @@ const { logger } = require('../utils/logger');
  * automatically forwarded from rejected promises in Express 5.
  * 
  * The middleware performs three primary functions:
- * 1. Comprehensive error logging for debugging and monitoring
+ * 1. Error logging for debugging and monitoring, redacted for least privilege
  * 2. Setting appropriate HTTP status code for error responses
  * 3. Sending standardized, generic error response to clients
  * 
  * Error Handling Flow:
  * 1. Receives error from Express framework (manual next(err) or automatic promise rejection)
- * 2. Logs detailed error information including stack trace for debugging
+ * 2. Logs error information - the stack trace in development only, and request
+ *    headers through a redacting allow-list
  * 3. Sets HTTP 500 Internal Server Error status code
  * 4. Sends generic JSON error response to client
  * 5. Terminates request-response cycle (does not call next())
@@ -94,22 +198,42 @@ const { logger } = require('../utils/logger');
  * });
  */
 function errorHandler(err, req, res, next) {
-    // Step 1: Log comprehensive error details for debugging and monitoring
+    // Step 1: Log error details for debugging and monitoring
     // This provides developers with detailed error information including:
     // - Error message and type
-    // - Complete stack trace for debugging
-    // - Request context (URL, method, headers) for reproduction
+    // - The stack trace, in development only - see STACK_OMITTED_VALUE
+    // - Request context (URL, method, redacted headers) for reproduction
     // - Timestamp and environment information (handled by logger utility)
+    //
+    // The record is deliberately narrower than everything available on the
+    // request. A log is read by more people, and retained longer, than a
+    // response is, so the two disclosure risks the request carries are closed
+    // here: credential-bearing header values, and the absolute host filesystem
+    // paths every stack frame names.
     logger.error('Unhandled application error occurred:', {
-        // Error details for debugging
+        // Error details for debugging. The message and name are authored by the
+        // application rather than derived from the environment, so they carry
+        // no filesystem path and remain available in every environment - they
+        // are what makes a production error diagnosable at all once the stack
+        // is withheld.
         errorMessage: err.message,
-        errorStack: err.stack,
+
+        // The stack names an absolute path for every frame, so it is recorded
+        // only in development. Outside development the marker records that it
+        // was withheld on purpose.
+        errorStack:
+            config.nodeEnv === 'development' ? err.stack : STACK_OMITTED_VALUE,
         errorName: err.name,
         
         // Request context for error reproduction and analysis
         requestUrl: req.originalUrl || req.url,
         requestMethod: req.method,
-        requestHeaders: req.headers,
+
+        // Headers pass through the redacting allow-list: every header name the
+        // caller sent is recorded, but only an allow-listed value is
+        // reproduced. Authorization, Cookie and any other credential carrier
+        // is recorded as '[REDACTED]'.
+        requestHeaders: sanitizeRequestHeaders(req.headers),
         requestParams: req.params,
         requestQuery: req.query,
         
