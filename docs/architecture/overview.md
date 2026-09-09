@@ -26,30 +26,39 @@ The following diagram illustrates the high-level component interactions and data
 
 ```mermaid
 graph TD
-    A[HTTP Client] -->|HTTP Request| B(Node.js HTTP Server)
-    B --> C{Express.js Application}
-    C -->|Route Matching| D[Express Router]
-    D -->|Handler Execution| E[Hello Route Handler]
-    E -->|Response Generation| D
-    D -->|Response Data| C
-    C -->|HTTP Response| B
-    B -->|Response Delivery| A
-    
-    F[Event Loop] -->|Async Processing| B
-    F -->|Promise Resolution| C
-    F -->|Callback Execution| E
-    
-    G[Node.js Runtime] -->|HTTP Module| B
-    G -->|Express Framework| C
-    G -->|JavaScript Engine| E
-    
+    A[HTTP Client] -->|HTTP Request| B("Node.js HTTP Server<br/>server.js")
+
+    subgraph App["Express Application - app.js, in registration order"]
+        direction TB
+        L["1. Request Logger<br/>middleware/requestLogger.js"]
+        D["2. Aggregate Router<br/>routes/index.js"]
+        E["Hello Router<br/>routes/hello.js"]
+        NF["Express default handler<br/>404 HTML page"]
+        H["3. Terminal Error Handler<br/>four-arity, registered last<br/>middleware/errorHandler.js"]
+        L -->|"next()"| D
+        D -->|"mounted at /hello"| E
+        D -->|"no route matches"| NF
+        E -.->|"throw or next(err)"| H
+    end
+
+    B -->|"http.createServer(app) request listener"| L
+    E -->|"res.send('Hello world')"| RES["HTTP Response"]
+    NF --> RES
+    H -->|"JSON 500 envelope"| RES
+    RES -->|Response Delivery| A
+
+    F[Event Loop] -->|"Socket readiness and I/O events"| B
+    G[Node.js Runtime] -->|"http module"| B
+    G -->|"Express 5.1.0"| App
+
     style A fill:#e1f5fe
     style E fill:#c8e6c9
     style F fill:#fff3e0
     style G fill:#f3e5f5
+    style H fill:#ffcdd2
 ```
 
-This architecture demonstrates the flow from HTTP client requests through the Node.js runtime environment, Express.js framework processing, and route handler execution, all coordinated by the single-threaded event loop mechanism.
+This architecture demonstrates the flow from an HTTP client request through the Node.js runtime into the Express application's middleware pipeline, drawn in the order `app.js` registers it — request logger first, the aggregated router second, the terminal error handler last — and back out as one of three responses: the hello handler's `Hello world`, Express's own default 404 page for a request matching no route, or the error handler's JSON 500 envelope. That last edge is dashed because it is a capability rather than an exercised path: no route in this tutorial throws or forwards an error. The event loop drives the server's socket readiness and I/O events, while the `/hello` handler itself runs synchronously.
 
 ## 2. Core Components
 
@@ -62,7 +71,7 @@ The HTTP Server component serves as the foundational entry point of the applicat
 - HTTP request parsing and initial validation according to HTTP/1.1 protocol standards
 - Response formatting and delivery to HTTP clients
 - Integration with Express.js framework layer for application logic processing
-- Server lifecycle management including startup, shutdown, and error handling
+- Server lifecycle management covering startup and fatal-error handling: the `listen` callback reports readiness, a server `error` listener classifies bind failures such as `EADDRINUSE`, and process-level `unhandledRejection` and `uncaughtException` handlers log and exit. Graceful shutdown is **not** implemented — no `SIGTERM` or `SIGINT` handler is registered and `server.close()` is never called outside the test suite, so a termination signal ends the process without draining in-flight requests
 
 **Technical Specifications:**
 - **Runtime Environment**: Node.js v22.16.0 LTS with 'Jod' codename for critical updates and security support
@@ -72,7 +81,7 @@ The HTTP Server component serves as the foundational entry point of the applicat
 
 ### 2.2. Express Application (`app.js`)
 
-The Express Application component orchestrates the web framework functionality using Express.js 5.1.0, the latest stable release published within the last two months. This component provides the middleware architecture, routing capabilities, and request/response processing pipeline essential for HTTP request handling.
+The Express Application component orchestrates the web framework functionality using Express.js 5.1.0. This component provides the middleware architecture, routing capabilities, and request/response processing pipeline essential for HTTP request handling.
 
 **Core Functionality:**
 - **Middleware Stack Management**: Sequential request processing through configurable middleware pipeline
@@ -84,8 +93,8 @@ The Express Application component orchestrates the web framework functionality u
 Express 5.1.0 introduces significant improvements including middleware that can return rejected promises (automatically caught by the router as errors), enhanced security through ReDoS attack mitigation, and improved performance optimizations. The framework dropped support for Node.js versions before v18, ensuring compatibility with modern JavaScript features and security standards.
 
 **Architectural Patterns:**
-- **Middleware Pattern**: Sequential processing pipeline for request transformation and validation
-- **Router Pattern**: Hierarchical route organization with exact path matching for the `/hello` endpoint
+- **Middleware Pattern**: Sequential processing pipeline of exactly three registrations, in the order `app.js` applies them — the request logger, the aggregated router, then the terminal error handler. The pipeline observes, routes and terminates requests; it neither transforms nor validates them, because no body parser, sanitizer or validator is mounted anywhere in this application
+- **Router Pattern**: Hierarchical route organization — a dedicated `/hello` router mounted on the aggregated router — resolved by Express's default matcher rather than by an exact string comparison. That matcher is case-insensitive and non-strict, which is why the path variants recorded in §2.3 also reach the handler
 - **Promise-Based Error Handling**: Modern error propagation using async/await patterns and automatic error forwarding
 
 ### 2.3. Route Handler (`routes/hello.js`)
@@ -93,10 +102,10 @@ Express 5.1.0 introduces significant improvements including middleware that can 
 The Hello Route Handler implements the core business logic for the `/hello` endpoint, demonstrating fundamental HTTP endpoint implementation patterns and response generation techniques. This component represents the simplest possible RESTful API endpoint while maintaining production-ready code quality.
 
 **Implementation Specifications:**
-- **Route Pattern**: `/hello` with exact path matching and case-sensitive route handling
-- **HTTP Method Support**: GET method only, with proper 405 Method Not Allowed responses for other methods
+- **Route Pattern**: `/hello`, matched using the default Express router behavior — matching is case-insensitive and non-strict, so trailing slashes are ignored and `/HELLO` and `/hello/` reach the same handler as `/hello`; no routing option is changed by this application
+- **HTTP Method Support**: `GET` is the only declared method. Express derives two further behaviors from that single declaration: `HEAD` returns `200` with the same headers and no body, and `OPTIONS` returns `200` with `Allow: GET, HEAD`. `POST`, `PUT`, `DELETE` and any other unmatched method are answered with `404 Not Found` by Express's default handler
 - **Response Format**: Plain text content with "Hello world" static response
-- **Content-Type Header**: Properly set text/plain header for client content type negotiation
+- **Content-Type Header**: `text/html; charset=utf-8`, derived by `res.send('Hello world')` — Express infers the status code, `Content-Type` and `Content-Length` (11 bytes) from the string body rather than the handler setting the header explicitly
 
 **Business Logic Pattern:**
 The handler follows a stateless design pattern where each request is processed independently without maintaining session state or persistent data. This approach demonstrates scalable API design principles while keeping the implementation simple for educational purposes.
@@ -132,70 +141,73 @@ sequenceDiagram
     participant Client as HTTP Client
     participant Server as Node.js HTTP Server
     participant ExpressApp as Express Application
-    participant Router as Express Router
+    participant Logger as Request Logger
+    participant Router as Aggregate Router
     participant HelloHandler as Hello Route Handler
-    participant EventLoop as Event Loop
+    participant ErrorHandler as Terminal Error Handler
 
     Client->>Server: GET /hello
-    Server->>EventLoop: Queue Request
-    EventLoop->>ExpressApp: Process Request
-    ExpressApp->>Router: Route Matching
-    
-    alt Route Found
-        Router->>HelloHandler: Execute Handler
-        HelloHandler->>HelloHandler: Generate "Hello world"
-        HelloHandler->>ExpressApp: Return Response Data
-        ExpressApp->>Server: Format HTTP Response
-        Server->>Client: HTTP 200 + "Hello world"
-    else Route Not Found
-        Router->>ExpressApp: No Route Match
-        ExpressApp->>Server: Generate 404 Response
-        Server->>Client: HTTP 404 Not Found
+    Server->>ExpressApp: Invoke the request listener
+    ExpressApp->>Logger: Mounted first, before any router
+    Logger->>Logger: console.log method, path and body
+    Logger->>Router: next()
+    Router->>Router: Match the /hello mount
+
+    alt Route matched
+        Router->>HelloHandler: GET / on the hello router
+        HelloHandler->>Server: res.send writes the body and ends the response
+        Server->>Client: 200 OK, Content-Type text/html, 11 bytes
+    else No route matches
+        Router->>Server: Express default handler writes an HTML 404
+        Server->>Client: 404 Not Found, body names the method and path
+    else Handler throws or returns a rejected promise
+        HelloHandler->>ErrorHandler: next(err) reaches the last-registered handler
+        ErrorHandler->>Server: res.status(500) with the generic JSON envelope
+        Server->>Client: 500 Internal Server Error, application/json
     end
-    
-    Note over Client,EventLoop: Total response time < 100ms
-    Note over EventLoop: Single-threaded event processing
+
+    Note over Client,ErrorHandler: Full request-response cycle under the documented 100 ms budget
+    Note over Logger,ErrorHandler: Every request is logged, including one that matches no route
 ```
 
 **Performance Characteristics:**
 The data flow is optimized for minimal latency with target response times under 100ms for the complete request-response cycle. The single-threaded event loop processes requests asynchronously, allowing efficient handling of concurrent connections without the overhead of thread management.
 
 **State Management:**
-The system maintains a stateless design where no persistent data is stored between requests. All request-specific data exists only during the request lifecycle and is automatically garbage collected upon completion, ensuring efficient memory usage and preventing memory leaks.
+The system maintains a stateless design where no persistent data is stored between requests. Request-specific objects are scoped to a single request, and once the response has completed and nothing holds a reference to them they become *eligible* for garbage collection; V8 then reclaims them on its own schedule rather than at a fixed point in the request lifecycle. Reachability is what governs this, not request completion — a reference retained past the response, whether on a module-level object, in a closure or by a long-lived listener, keeps the object alive. Statelessness therefore narrows the opportunity for a leak, but automatic collection does not by itself rule one out.
 
 ## 4. Cross-Cutting Concerns
 
 ### 4.1. Logging
 
-The application implements a structured logging strategy using built-in Node.js console methods enhanced with request correlation and timing information. Logging is implemented as middleware to provide consistent request tracking and debugging capabilities.
+The application implements a lightweight logging strategy built on the built-in Node.js `console` methods, wrapped by a small logger utility, and request logging is implemented as middleware so that every incoming request is recorded consistently for debugging purposes. The logger writes synchronously: `logger.info` delegates directly to `console.log`, prefixing the line with `[INFO]:` only when `NODE_ENV` is `development`.
 
 **Logging Implementation:**
-- **Request Logging**: Each incoming HTTP request is logged with timestamp, method, path, and client information
-- **Response Logging**: Response status codes and processing times are captured for performance monitoring
-- **Error Logging**: Errors are logged with full stack traces and contextual information for debugging
-- **Performance Logging**: Response time measurements help identify performance bottlenecks and optimization opportunities
+- **Request Logging**: Each incoming HTTP request is logged with exactly three fields — the HTTP method; the request target exactly as the client sent it (`req.originalUrl`, query string included); and the request body, rendered as its JSON serialization for an object, as `String(body)` for a primitive, as `{}` when the body is absent, and as `[Object - Unable to serialize]` — accompanied by a second record on the error stream — when serialization fails
+- **Error Logging**: The error-handling middleware logs unhandled errors to the error stream with the error message and name, the stack trace (in development only — see below), and request context: the same request target, the request method, a redacted view of the request headers, the route parameters and the query, an ISO timestamp, the User-Agent, and the client IP address
+- **Redaction in the Error Record**: The error record is the one place the application filters what it writes, and it filters two things. Request **header values** pass through an allow-list — `host`, `user-agent`, `accept`, `content-type` and `content-length` are recorded as received, and every other header keeps its *name* but has its value replaced by the literal `[REDACTED]`. The list is closed by default deliberately: a deny-list of the credential headers known today (`authorization`, `cookie`, `proxy-authorization`, `x-api-key`) would still write out the value of any credential header nobody enumerated. The **stack trace** is recorded only when `NODE_ENV` is `development`; outside development the field reads `[stack omitted outside development]`, because every V8 stack frame names an absolute host filesystem path and so discloses the deployment's directory layout and dependency locations. The error message and name are never gated — they are authored by the application, name no path, and are what keeps a production error diagnosable once the trace is withheld
+- **No Redaction Elsewhere**: The request logger redacts, truncates and allow-lists nothing, and needs no allow-list for headers because it never reads them: it records the method, the request target and the body only. The request target is copied exactly as received in both logs, so whatever a caller places in the path or query string reaches the log unchanged. The request body is rewritten rather than copied, and only into the four renderings above: `JSON.stringify` omits a field whose value is `undefined` or a function and calls a `toJSON` method if the body defines one, but every field name and value it does serialize is recorded. Nothing filters records by severity, and `NODE_ENV` otherwise changes only the `[INFO]:`/`[ERROR]:` prefix. So the log is narrower than the request that produced it, but controlling access to it — and bounding its retention — remains the operator's responsibility rather than the application's
 
 **Log Format Structure:**
 ```
-[timestamp] level method path status responseTime clientIP
+[INFO]: HTTP Request - Method: GET Path: /hello Body: {}
 ```
 
-This structured format enables easy parsing for log analysis tools while remaining human-readable for development environments.
+Outside development the identical line is emitted without the `[INFO]: ` prefix, since the prefix is applied only when `NODE_ENV` is `development`. This is a single human-readable console line rather than a machine-structured format: the record itself is not JSON-encoded — only a serialized object body appears as JSON, inside the `Body:` field — and it has no fixed field positions and no level, status, latency, or timestamp fields. It stays easy to filter during development because the fixed `HTTP Request -` prefix and the `Method:`, `Path:`, and `Body:` labels are greppable.
 
 ### 4.2. Error Handling
 
-The application implements a comprehensive error handling strategy leveraging Express.js 5.1.0's enhanced promise support and automatic error forwarding capabilities. Error handling is centralized through middleware to ensure consistent error responses and prevent sensitive information disclosure.
+The application handles errors on two distinct paths, and they do not share a response format. An error raised inside a route handler — thrown synchronously, or surfaced as a rejected promise, which Express 5.1.0 forwards automatically — reaches the custom four-arity middleware in `middleware/errorHandler.js`, registered last in `app.js` so that every router precedes it. That middleware logs the detail internally and answers with a generic JSON envelope. A request matching no route never reaches it: Express's own default handler answers that case with an HTML page. So only the first path is centralized through application middleware, and only that path produces JSON.
 
 **Error Handling Architecture:**
 - **Route-Level Errors**: Errors thrown in route handlers are automatically caught by Express error middleware
 - **Promise Rejection Handling**: Automatic forwarding of rejected promises to error handling middleware
-- **HTTP Error Responses**: Standardized error response format with appropriate HTTP status codes
+- **HTTP Error Responses**: Two formats rather than one — the custom middleware emits `application/json` carrying a four-field envelope (`error`, `status`, `timestamp`, `path`), while Express's default handler emits an HTML page. No single standardized format spans both paths
 - **Error Information Security**: Generic error messages sent to clients while detailed errors are logged internally
 
 **Error Response Categories:**
-- **404 Not Found**: For requests to non-existent routes with helpful error messages
-- **405 Method Not Allowed**: For unsupported HTTP methods on existing routes
-- **500 Internal Server Error**: For application errors with generic error messages to prevent information disclosure
+- **404 Not Found**: For requests to non-existent routes and, equally, for unsupported HTTP methods on `/hello` — Express's default handler answers both cases with an HTML error page (`text/html; charset=utf-8`) whose body names the attempted method and path, such as `Cannot POST /hello`
+- **500 Internal Server Error**: For application errors reaching the custom middleware, which sends a generic message so that no stack trace or internal detail is exposed to the client. The status is always `500` — the handler sets it unconditionally and never consults `err.status`, so every error routed to it is reported as a server error regardless of the status the error itself carries
 
 ### 4.3. Configuration
 
@@ -204,12 +216,12 @@ Application configuration is managed through environment variables with sensible
 **Configuration Management:**
 - **Port Configuration**: Server port configurable via PORT environment variable (default: 3000)
 - **Environment Detection**: NODE_ENV variable for development/production environment detection
-- **Logging Configuration**: Log level configuration for different deployment environments
+- **Logging Configuration**: There is no log-level control — no module reads a `LOG_LEVEL` variable, and nothing filters records by severity. `NODE_ENV` is the only setting that changes logging output: the logger prefixes each line with `[INFO]:` or `[ERROR]:` when it is `development` and omits the prefix otherwise. `ENABLE_LOGGING` gates only the startup configuration summary, not request logging
 - **Default Values**: Comprehensive default configuration ensures application runs without external configuration
 
 **Configuration Security:**
 - No sensitive configuration values in the tutorial scope
-- Environment variable validation for deployment safety
+- Configuration is total-defaulting rather than validating: every setting the application reads has a literal fallback, so startup never fails for want of an environment variable. What the configuration module performs at load is narrower than validation — one advisory `console.warn` when the derived port falls outside 1024-65535, which does not prevent the bind, and an `APP_NAME` presence check that no supported input can reach, because a non-empty default is substituted before the check runs. No other environment value is validated
 - Configuration documentation for operational teams
 - Secure default values that don't expose sensitive information
 

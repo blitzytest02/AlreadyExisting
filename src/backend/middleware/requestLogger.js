@@ -15,7 +15,7 @@
  * - Comprehensive request metadata logging (method, path, body)
  * - Integration with centralized logger utility for consistent formatting
  * - Environment-aware logging (development vs production formatting)
- * - Non-blocking operation - continues request processing after logging
+ * - Pass-through operation - calls next() after the log write completes
  * - Support for all HTTP methods and request types
  * - Request body logging with automatic JSON stringification for objects
  * 
@@ -57,7 +57,7 @@ const { logger } = require('../utils/logger.js'); // Version: Custom utility mod
  * 
  * Performance Considerations:
  * - Minimal processing overhead to avoid impacting request response times
- * - Asynchronous logging to prevent blocking request processing
+ * - Synchronous logging - one inline console write per request
  * - Efficient string concatenation and object serialization
  * - Memory-conscious handling of large request bodies
  * 

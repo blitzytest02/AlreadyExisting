@@ -19,8 +19,15 @@ This document provides comprehensive details for the `/hello` API endpoint. This
 ## Request Specification
 
 ### HTTP Method
-- **Supported:** `GET` only
-- **Unsupported Methods:** All other HTTP methods (POST, PUT, DELETE, PATCH, etc.) will result in 404 responses
+- **Declared:** `GET` — the one route declared for this endpoint
+- **Derived by Express:** `HEAD` returns `200` with the same headers as `GET` and no response body; `OPTIONS` returns `200` with `Allow: GET, HEAD`. Both are protocol behaviours Express derives from the single `GET` declaration, not additional endpoints
+- **Not Routed:** `POST`, `PUT`, `DELETE` and `PATCH` return `404 Not Found`
+
+### Path Matching
+- **Case-insensitive:** `GET /HELLO` returns `200`, just as `GET /hello` does
+- **Non-strict:** `GET /hello/` returns `200` — a trailing slash is ignored
+- **Source of this behaviour:** Express's default matching. Both routers are constructed by a bare `express.Router()` (`src/backend/routes/index.js`, `src/backend/routes/hello.js`), so no routing option is overridden by this application
+- **Not additional endpoints:** `/HELLO` and `/hello/` are alternate spellings that resolve to the same single declared route, `GET /hello`
 
 ### Request Parameters
 This endpoint does not require any parameters, headers, or request body:
@@ -44,6 +51,7 @@ Host: localhost:3000
 - **Status Code:** `200 OK`
 - **Content-Type:** `text/html; charset=utf-8`
 - **Content-Length:** 11 bytes
+- **X-Powered-By:** absent — the header is not sent, because `app.js` calls `app.disable('x-powered-by')`
 - **Response Body:**
 ```
 Hello world
@@ -59,6 +67,8 @@ Connection: keep-alive
 Keep-Alive: timeout=5
 ```
 
+`X-Powered-By` is absent from this response and from every other response the application sends: `app.js` calls `app.disable('x-powered-by')`, so Express never emits the header it would otherwise add by default.
+
 ### Performance Characteristics
 - **Target Response Time:** < 100ms (as per F-002 performance criteria)
 - **Typical Response Time:** < 25ms under normal conditions
@@ -69,8 +79,8 @@ Keep-Alive: timeout=5
 
 ## Error Responses
 
-### Method Not Allowed
-- **Scenario:** When using HTTP methods other than GET (POST, PUT, DELETE, etc.)
+### Unrouted HTTP Methods
+- **Scenario:** When using `POST`, `PUT`, `DELETE` or `PATCH` on `/hello` (`HEAD` and `OPTIONS` are served successfully and do not produce this response)
 - **Status Code:** `404 Not Found`
 - **Reason:** Express.js default behavior for unmatched route/method combinations
 - **Content-Type:** `text/html; charset=utf-8`
@@ -137,8 +147,8 @@ The browser will display the plain text response "Hello world" directly on the p
 ## Technical Implementation
 
 ### Framework Details
-- **Express Version:** 5.1.0 (latest stable with enhanced promise support)
-- **Node.js Version:** v22.16.0 LTS (Active LTS until October 2025)
+- **Express Version:** 5.1.0 (enhanced promise support)
+- **Node.js Version:** v22.16.0 LTS
 - **Routing Pattern:** Express Router with modular organization
 - **Response Method:** `res.send()` with automatic Content-Type detection
 
@@ -153,7 +163,7 @@ router.get('/', (req, res) => {
 ### Requirements Compliance
 - **F-002-RQ-001:** ✅ Route definition for `/hello` path with GET method support
 - **F-002-RQ-002:** ✅ Returns exact text "Hello world"
-- **F-002-RQ-003:** ✅ Supports only GET HTTP method
+- **F-002-RQ-003:** ✅ Declares only the GET HTTP method — `POST`, `PUT`, `DELETE` and `PATCH` return `404`, while Express derives `HEAD` and `OPTIONS` from the same declaration, so both return `200`
 - **F-002-RQ-004:** ✅ Includes appropriate Content-Type header (`text/html; charset=utf-8`)
 
 ---
@@ -184,7 +194,7 @@ This endpoint demonstrates:
 - Verify 200 status code response
 - Confirm exact "Hello world" response text
 - Validate Content-Type header setting
-- Test GET method exclusive support
+- Test the method matrix: GET, HEAD and OPTIONS return 200; POST, PUT, DELETE and PATCH return 404
 
 ### Performance Testing
 - Response time should be under 100ms
@@ -192,7 +202,7 @@ This endpoint demonstrates:
 - Server should handle concurrent requests efficiently
 
 ### Browser Compatibility
-- Tested on Chrome, Firefox, Safari, and Edge
+- Expected to work in Chrome, Firefox, Safari and Edge — the repository contains no browser-based test run, so this is an expectation rather than a verified result
 - Compatible with all modern web browsers
 - No JavaScript required for functionality
 
@@ -200,10 +210,11 @@ This endpoint demonstrates:
 
 ## Security Considerations
 
-- **Input Validation:** Not applicable (no user input accepted)
+- **Input Validation:** No application parameter is required, read or validated. The handler ignores the request entirely and sends the compile-time constant `Hello world`, so the response is input-independent and no request value can steer it. That is not the same as accepting no untrusted input: the HTTP method, the request target (path and query string), the request headers, and the client IP and `User-Agent` derived from them are all caller-controlled, and the application does accept and process them — `src/backend/middleware/requestLogger.js` records the method, path and body of every request, and `src/backend/middleware/errorHandler.js` records request context when it handles an error. Those log records, not the response body, are where untrusted request metadata lands. The error record filters what it writes: header values pass through an allow-list (`host`, `user-agent`, `accept`, `content-type`, `content-length`), so a credential-bearing header such as `Authorization` or `Cookie` contributes its name and the literal `[REDACTED]` rather than its value, and the stack trace is recorded only when `NODE_ENV` is `development`. The request target is not filtered in either log, so a token placed in a query string still reaches the log — treat log access and retention as a control that still matters here, alongside not putting secrets in URLs.
 - **Authentication:** None required (tutorial endpoint)
 - **Authorization:** No access restrictions
-- **Data Exposure:** Only static text response, no sensitive data
+- **Data Exposure:** The response carries only static text and no sensitive data. Request metadata does reach the process log, as described under Input Validation.
+- **Framework Fingerprinting:** Reduced, not eliminated — `app.disable('x-powered-by')` keeps Express's default `X-Powered-By` header off every response, and is the only response-header control this application applies. Removing that header reduces casual fingerprinting; it does not prevent identification of the framework, which Express's own default 404 page (`Cannot GET /<path>`) still reveals.
 - **Rate Limiting:** Not implemented (tutorial scope)
 
 ---
@@ -214,9 +225,9 @@ This endpoint demonstrates:
 
 | Issue | Symptom | Solution |
 |-------|---------|----------|
-| Server not running | Connection refused | Start server with `npm start` |
+| Server not running | Connection refused | Start server with `cd src/backend && npm start` — the `start` script lives in `src/backend/package.json`, and the repository root has no `package.json` |
 | Wrong port | 404 or connection error | Verify server running on port 3000 |
-| Method error | 404 response | Ensure using GET method only |
+| Method error | 404 response | Use GET (HEAD and OPTIONS also succeed); POST, PUT, DELETE and PATCH are not routed |
 | Network issues | Timeout | Check localhost connectivity |
 
 ### Validation Commands
@@ -236,6 +247,6 @@ curl -X POST http://localhost:3000/hello
 ## Related Documentation
 
 - **Server Setup:** See main README.md for installation and startup instructions
-- **Technical Specifications:** Reference TECHNICAL_SPECIFICATIONS.md for detailed requirements
+- **Technical Specifications:** Reference [Technical Specifications](../../blitzy/documentation/Technical%20Specifications_27cec292-747e-46ad-9dd6-ca621eea00f6.md) for detailed requirements
 - **Implementation Guide:** Check src/backend/routes/hello.js for code details
 - **Testing Guide:** Refer to test suite for validation examples

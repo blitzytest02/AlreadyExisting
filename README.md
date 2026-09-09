@@ -17,7 +17,7 @@ This application is built to provide a hands-on, practical example for understan
 
 ### 🛠 Built With
 
-- **[Node.js](https://nodejs.org/)** (v22.16.0 LTS) - JavaScript runtime with Active LTS support until October 2025
+- **[Node.js](https://nodejs.org/)** (v22.16.0 LTS) - JavaScript runtime providing the server-side execution environment
 - **[Express.js](https://expressjs.com/)** (v5.1.0) - Fast, unopinionated web framework with enhanced promise support
 - **[npm](https://www.npmjs.com/)** (v11.4.1+) - Package manager for dependency management
 
@@ -27,7 +27,7 @@ This application is built to provide a hands-on, practical example for understan
 - **Express Version**: 5.1.0 with automatic promise rejection handling
 - **Platform Support**: Cross-platform compatibility (Windows, macOS, Linux)
 - **Performance Target**: Response time < 100ms, Memory usage < 50MB
-- **Security**: Implements ReDoS attack mitigation and modern security headers
+- **Security**: No security headers are added - the only response-header control in the application is `app.disable('x-powered-by')` in `src/backend/app.js`, which removes Express's default banner. ReDoS mitigation is inherited from the framework rather than implemented here: Express 5.1.0 matches routes with `path-to-regexp` 8.x, which dropped the sub-expression patterns that made the earlier matcher vulnerable. Helmet, CORS and rate limiting are deliberately not part of this tutorial
 
 ## 🚀 Getting Started
 
@@ -107,7 +107,8 @@ After starting the server, the application will be available at:
 
 - **Base URL**: `http://localhost:3000`
 - **Hello Endpoint**: `http://localhost:3000/hello`
-- **Health Check**: `http://localhost:3000/health` (if implemented)
+
+The application exposes no separate health endpoint - `/hello` doubles as the health signal, and the container `HEALTHCHECK` and Kubernetes probes all target it.
 
 ### 📱 Testing the Endpoint
 
@@ -127,12 +128,20 @@ curl -i http://localhost:3000/hello
 
 **Expected Console Output:**
 ```
-🚀 HTTP Server successfully started and listening on port 3000
-🌐 Server is ready to accept HTTP requests
-📍 Local development URL: http://localhost:3000
-⚡ Node.js v22.16.0 | Express 5.1.0 | Environment: development
-🎯 Tutorial application initialized successfully
+📊 Configuration loaded successfully:
+   🚀 App Name: node-tutorial-app
+   🌐 Host: localhost
+   📡 Port: 3000
+   🔧 Environment: development
+   📝 Logging: enabled
+[INFO]: 🚀 HTTP Server successfully started and listening on port 3000
+[INFO]: 🌐 Server is ready to accept HTTP requests
+[INFO]: 📍 Local development URL: http://localhost:3000
+[INFO]: ⚡ Node.js v22.16.0 | Express 5.1.0 | Environment: development
+[INFO]: 🎯 Tutorial application initialized successfully
 ```
+
+The configuration summary is printed as the configuration module loads, before the server begins listening, and the values above are the built-in defaults; a developer who creates their own `.env` from `.env.example` sees their own values there instead.
 
 ## 📚 API Reference
 
@@ -143,10 +152,11 @@ The application exposes a single API endpoint designed to demonstrate fundamenta
 **Description**: Returns a static "Hello world" message demonstrating basic HTTP GET request handling.
 
 **Technical Details:**
-- **Method**: GET only (other methods return 404)
-- **Response**: Plain text "Hello world"
+- **Method**: `GET` is the only declared route. Express derives two protocol behaviours from that single declaration rather than adding endpoints: `HEAD` returns 200 with the same headers and no body, and `OPTIONS` returns 200 with `Allow: GET, HEAD`. `POST`, `PUT`, `DELETE` and `PATCH` return 404
+- **Response**: The literal string `Hello world` - 11 bytes, no trailing newline
 - **Status Code**: 200 OK
 - **Content-Type**: text/html; charset=utf-8
+- **Content-Length**: 11
 - **Performance**: Response time < 100ms
 
 For comprehensive API documentation including request/response examples, error handling, and integration notes, see the [API Documentation](./docs/api/hello.md).
@@ -181,7 +191,7 @@ src/backend/
 - **Routing**: Express Router with modular organization
 - **Middleware**: Request logging and error handling
 - **Configuration**: Environment-based configuration management
-- **Logging**: Structured logging with multiple output formats
+- **Logging**: Console logging that adds `[INFO]:` and `[ERROR]:` level prefixes in development and writes the same messages unprefixed elsewhere
 
 For a detailed explanation of the system architecture, design patterns, and component interactions, please see the [Architecture Overview](./docs/architecture/overview.md).
 
@@ -215,7 +225,7 @@ kubectl get all -n tutorial-app
 
 The project includes GitHub Actions workflows for continuous integration and deployment:
 
-- **CI Pipeline**: Automated testing, linting, and security scanning
+- **CI Pipeline**: Three steps in `src/backend` on Node.js 22.x and nothing else - `npm ci`, `npm audit` and `npm test`. The audit step runs bare, with no `--audit-level`, so any advisory at any severity fails the job; there is no lint or format step, because neither tool is installed
 - **CD Pipeline**: Container building and deployment automation
 - **Multi-Environment**: Support for development, staging, and production
 
@@ -232,7 +242,7 @@ npm test
 # Run tests with coverage
 npm run test:coverage
 
-# Development mode with watch
+# Watch mode: re-runs affected suites as you edit; nothing runs on a clean checkout until a tracked file changes
 npm run test:watch
 ```
 
@@ -246,8 +256,8 @@ npm run test:watch
 ### 🛠 Development Tools
 
 - **Nodemon**: Automatic server restart during development
-- **ESLint**: Code linting and style enforcement
-- **Prettier**: Code formatting
+- **ESLint configuration**: `.eslintrc.js` codifies the project's code rules - two-space indentation, single quotes and mandatory semicolons. The tooling itself is not installed as a dependency, so the standard is followed by convention rather than enforced by a command
+- **Prettier configuration**: `.prettierrc` records the same indentation, quoting and semicolon rules for editors that read it, and is the one file that sets the 80-column line width (`printWidth: 80`); it is likewise not installed as a dependency
 - **Jest**: Testing framework with coverage reporting
 
 ### 📝 Scripts
@@ -256,9 +266,9 @@ npm run test:watch
 |--------|---------|-------------|
 | Start | `npm start` | Production server startup |
 | Development | `npm run dev` | Development with auto-reload |
-| Test | `npm test` | Run test suite |
-| Lint | `npm run lint` | Code linting |
-| Format | `npm run format` | Code formatting |
+| Test | `npm test` | Runs the Jest suite; coverage is collected on every run and the 90% global threshold is enforced |
+| Test (coverage) | `npm run test:coverage` | Passes `--coverage` explicitly and writes the same report to `coverage/` |
+| Test (watch) | `npm run test:watch` | Re-runs the suites affected by each file change; on a clean checkout it starts by running nothing until a tracked file changes — see [`docs/setup/development.md`](./docs/setup/development.md) §7.3 |
 
 ### 🔧 Configuration
 
@@ -268,12 +278,10 @@ The application uses environment variables for configuration:
 # Server configuration
 PORT=3000
 NODE_ENV=development
+# Read into config.host and shown at startup, but never reaches server.listen - the bound interface is unaffected
 HOST=localhost
+# Read by no module - setting this has no effect
 LOG_LEVEL=info
-
-# Feature flags
-HEALTH_CHECK_ENABLED=true
-METRICS_ENABLED=false
 ```
 
 ## 🤝 Contributing
@@ -302,9 +310,9 @@ For comprehensive contribution guidelines, development setup, coding standards, 
 
 ## 📄 License
 
-This project is distributed under the MIT License. See the [LICENSE](LICENSE) file for complete details.
+This project is distributed under the ISC License, declared in the `license` field of [`src/backend/package.json`](./src/backend/package.json).
 
-The MIT License allows for:
+The ISC License allows for:
 - ✅ Commercial use
 - ✅ Modification
 - ✅ Distribution
@@ -330,7 +338,7 @@ The MIT License allows for:
 
 This tutorial application demonstrates:
 
-- **Modern Node.js Development**: Latest LTS version with ES2022+ features
+- **Modern Node.js Development**: Node.js v22.16.0 LTS with ES2022+ features
 - **Express.js Framework**: Version 5.1.0 with enhanced promise support
 - **Production Patterns**: Enterprise-grade architecture and security practices
 - **DevOps Integration**: Docker, Kubernetes, and CI/CD configurations

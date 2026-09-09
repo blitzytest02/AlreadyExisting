@@ -160,8 +160,6 @@ yarn.lock
 # ==============================================================================
 # DEPLOYMENT & INFRASTRUCTURE
 # ==============================================================================
-# Docker specific files (for future containerization)
-.dockerignore
 
 # Cloud platform specific files
 .vercel

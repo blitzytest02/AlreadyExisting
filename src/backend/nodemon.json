@@ -1,10 +1,9 @@
 {
-  "watch": ["src/backend/"],
+  "watch": ["./"],
   "ext": "js,json",
   "ignore": [
-    "src/backend/tests/",
-    "src/backend/node_modules/",
-    "src/backend/package-lock.json"
-  ],
-  "exec": "node src/backend/server.js"
+    "tests/",
+    "node_modules/",
+    "package-lock.json"
+  ]
 }

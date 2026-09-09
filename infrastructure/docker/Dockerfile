@@ -17,7 +17,7 @@ WORKDIR /usr/src/app
 
 # Copy package management files first for optimal Docker layer caching
 # This allows Docker to cache the npm install step when only source code changes
-COPY package.json package-lock.json ./
+COPY src/backend/package.json src/backend/package-lock.json ./
 
 # Install all dependencies (including devDependencies for potential build steps)
 # Using npm ci for faster, reliable, reproducible builds in production environments
@@ -25,7 +25,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --include=dev \
     && npm cache clean --force
 
-# Copy the entire src/backend directory into the container
+# Copy src/backend as filtered by the root .dockerignore (no node_modules, tests, envs)
 # This includes all source code files needed for the application
 COPY src/backend/ ./
 
@@ -57,9 +57,9 @@ COPY --from=builder /usr/src/app/package.json /usr/src/app/package-lock.json ./
 RUN npm ci --omit=dev --only=production \
     && npm cache clean --force
 
-# Copy application source code from builder stage
-# This ensures only necessary files are included in the final image
-COPY --from=builder /usr/src/app/src/backend/ ./
+# Copy application source code from the build context, not the builder stage
+# The builder's dev dependency tree would overwrite the production install above
+COPY src/backend/ ./
 
 # Create a non-root user for enhanced container security
 # This follows security best practices by avoiding running as root
@@ -101,7 +101,7 @@ CMD ["npm", "start"]
 # =============================================================================
 
 # Build instructions:
-# docker build -t nodejs-tutorial-app .
+# docker build -t nodejs-tutorial-app -f infrastructure/docker/Dockerfile .
 # docker run -p 3000:3000 nodejs-tutorial-app
 
 # Development override example:

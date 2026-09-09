@@ -1,0 +1,30 @@
+# Docker reads the ignore file from the build CONTEXT ROOT. Both build paths set
+# that root to the repository root (cd.yml `context: .`, docker-compose.yml
+# `context: ../..`), so this file is in force and infrastructure/docker/.dockerignore
+# is never loaded. A `<dockerfile-path>.dockerignore` would REPLACE this file
+# outright, so none may be created beside infrastructure/docker/Dockerfile.
+
+# Patterns match relative to that root, so a bare `node_modules/` would not match
+# src/backend/node_modules: the backend artifacts need the recursive `**/` form,
+# while entries that genuinely sit at the root are written bare.
+
+# src/backend/package.json, src/backend/package-lock.json and the application
+# sources are deliberately NOT excluded; both image stages read them from the context.
+
+**/node_modules
+**/coverage
+**/*.log
+
+**/jest.config.js
+**/nodemon.json
+**/.eslintrc.js
+**/.prettierrc
+
+# `**/.env` matches the literal name only, hence `**/.env.example`
+**/.env
+**/.env.example
+
+src/backend/tests
+.git
+docs/
+infrastructure/
