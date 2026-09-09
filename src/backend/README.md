@@ -39,7 +39,7 @@ Before you begin, ensure you have the following installed:
 
 Every command in this document runs with only Node.js and npm installed, except where it names one of these:
 
-- **[Git](https://git-scm.com/)**: cloning the repository, and `npm run test:watch`, which Jest refuses to run outside a Git working copy
+- **[Git](https://git-scm.com/)**: cloning the repository, and `npm run test:watch`, which Jest refuses to run outside a Git working copy — Git is also what `--watch` consults to decide which suites to re-run
 - **[curl](https://curl.se/)**, **[wget](https://www.gnu.org/software/wget/)** or **[HTTPie](https://httpie.io/)**: any one of them verifies the endpoint — a browser or Node's global `fetch` works equally well
 - **[Docker](https://www.docker.com/)**: only for the containerization notes under Deployment
 
@@ -437,6 +437,7 @@ npm test
 npm run test:coverage
 
 # Re-run affected tests as files change (interactive; needs a Git working copy)
+# On a clean checkout it runs nothing until a tracked file changes; see below
 npm run test:watch
 ```
 
@@ -448,6 +449,8 @@ Tests:       11 passed, 11 total
 ```
 
 `jest.config.js` sets `collectCoverage: true`, so coverage is measured on every run rather than only under `test:coverage`, and the global thresholds of 90% for branches, functions, lines and statements are part of what `npm test` has to satisfy. Instrumentation covers `middleware/**/*.js` and `routes/**/*.js`, which currently report 100% on all four metrics.
+
+`npm run test:watch` runs nothing on a clean checkout — with no tracked file changed since the last commit it prints `No tests found related to files changed since last commit.` and keeps watching — so press `a` at its `Watch Usage` menu or run `npm test -- --watchAll` to run every suite immediately; `docs/setup/development.md` §7.3 is the canonical watch-mode procedure.
 
 ### Manual Testing
 

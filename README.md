@@ -242,7 +242,7 @@ npm test
 # Run tests with coverage
 npm run test:coverage
 
-# Development mode with watch
+# Watch mode: re-runs affected suites as you edit; nothing runs on a clean checkout until a tracked file changes
 npm run test:watch
 ```
 
@@ -268,7 +268,7 @@ npm run test:watch
 | Development | `npm run dev` | Development with auto-reload |
 | Test | `npm test` | Runs the Jest suite; coverage is collected on every run and the 90% global threshold is enforced |
 | Test (coverage) | `npm run test:coverage` | Passes `--coverage` explicitly and writes the same report to `coverage/` |
-| Test (watch) | `npm run test:watch` | Re-runs the tests affected by each file change |
+| Test (watch) | `npm run test:watch` | Re-runs the suites affected by each file change; on a clean checkout it starts by running nothing until a tracked file changes — see [`docs/setup/development.md`](./docs/setup/development.md) §7.3 |
 
 ### 🔧 Configuration
 

@@ -209,13 +209,14 @@ npm test
 npm run test:coverage
 
 # Re-run the affected suites as you edit; press Ctrl+C to stop the watcher
+# On a clean checkout nothing runs until a tracked file changes or you press a
 npm run test:watch
 
 # The same watcher for a tree that is not under version control
 npm test -- --watchAll
 ```
 
-`test:watch` runs `jest --watch`, which selects the suites affected by your uncommitted changes and therefore requires the project to be a Git (or Mercurial) working copy. Inside a clone that is always true. Outside one — if you downloaded the sources as an archive instead of cloning them — it exits immediately with `--watch is not supported without git/hg, please use --watchAll`; use `npm test -- --watchAll` in that case, which re-runs every suite on each change. Both watchers hold the terminal until you stop them with Ctrl+C, so run them in their own terminal and never in a script or CI job, which would hang.
+`test:watch` runs `jest --watch`, which selects the suites affected by your uncommitted changes and therefore requires the project to be a Git (or Mercurial) working copy. Inside a clone that is always true. On a clean tree, though, nothing is uncommitted, so watch mode starts by running no tests at all and prints `No tests found related to files changed since last commit.` — that is expected behaviour, not a broken setup. Change a tracked file to have it run the affected suites, or press `a` at its `Watch Usage` menu to run every suite straight away. Outside a clone — if you downloaded the sources as an archive instead of cloning them — it exits immediately with `--watch is not supported without git/hg, please use --watchAll`; use `npm test -- --watchAll` in that case, which re-runs every suite on each change. Both watchers hold the terminal until you stop them with Ctrl+C, so run them in their own terminal and never in a script or CI job, which would hang.
 
 ## Security Guidelines
 

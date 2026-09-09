@@ -224,7 +224,7 @@ Examine the `package.json` file to understand the dependencies that will be inst
 - `dev: "nodemon server.js"` - Development server with auto-reload
 - `test: "jest"` - Runs the unit and integration suites, with coverage collected on every run
 - `test:coverage: "jest --coverage"` - Runs the suites and writes a coverage report
-- `test:watch: "jest --watch"` - Re-runs affected suites as files change; requires a Git or Mercurial checkout (see §7.3 for the prerequisite, the fallback and how to stop it)
+- `test:watch: "jest --watch"` - Re-runs affected suites as files change; requires a Git or Mercurial checkout (see §7.3 for what it prints on a clean checkout, the prerequisite, the fallback and how to stop it)
 
 #### Step 3: Install Dependencies
 
@@ -1099,14 +1099,44 @@ For more comprehensive testing:
 # Run the test suites once; coverage is collected on every run
 npm test
 
-# Watch mode for continuous testing (read the prerequisites below first)
+# Watch mode (read below: prerequisites, and what it prints on a clean checkout)
 npm run test:watch
 ```
 
-**Watch mode: prerequisite, fallback and how to stop it.** This is the canonical
-procedure — the other places in this guide that mention watch mode refer back
-here.
+**Watch mode: what it prints on a clean checkout, how to make it run something,
+its prerequisite, and how to stop it.** This is the canonical procedure — the
+other places in this guide that mention watch mode refer back here.
 
+- On a clean checkout — nothing uncommitted — `npm run test:watch` starts, runs
+  **no tests at all**, and prints:
+
+  ```
+  No tests found related to files changed since last commit.
+  Press `a` to run all tests, or run Jest with `--watchAll`.
+  ```
+
+  followed by `Test Suites: 0 total`, `Tests: 0 total`, an all-zero coverage
+  table and the interactive `Watch Usage` menu. That is expected behaviour and
+  not a broken setup: `--watch` asks Git what changed since the last commit, and
+  a tree with no changes has no affected suites to run. The process stays alive
+  and keeps watching.
+
+- Two ways to make it run something without waiting. Edit a tracked file, and
+  the watcher runs only the suites that depend on it, printing
+  `Ran all test suites related to changed files.` Or press `a` at the
+  `Watch Usage` menu, which switches the watcher to running everything and
+  reports all four suites with `Ran all test suites.` Starting
+  `npm test -- --watchAll` instead of `npm run test:watch` does the same from
+  the outset. Note that `Enter` is not one of these ways: it re-triggers a run
+  in whichever mode the watcher is already in, so on a clean checkout in the
+  default mode it finds no affected suites and prints the same
+  `No tests found related to files changed since last commit.` again.
+- If you redirect the output to a file, or otherwise run without an interactive
+  terminal, Jest suppresses the prompt line and the `Watch Usage` menu: only the
+  `No tests found related to files changed since last commit.` line and the
+  all-zero coverage table appear. Treat that line plus a process that is still
+  running as the sign that watch mode came up, or use `--watchAll` for a startup
+  check that has to run tests.
 - `npm run test:watch` runs `jest --watch`, which decides which suites to re-run
   by asking your version-control system what changed. It therefore requires the
   tree to be a Git or Mercurial working copy. Outside one — for example in a
@@ -1115,7 +1145,8 @@ here.
 - In that situation, re-run every suite on each change instead. This needs no new
   npm script — pass the flag through to Jest: `npm test -- --watchAll`.
 - Both watchers keep running until you stop them, holding the terminal. Press
-  `Ctrl+C` in that terminal to exit. Stop them there rather than from another
+  `Ctrl+C` in that terminal to exit, or `q` at the `Watch Usage` menu, which
+  quits watch mode and exits 0. Stop them there rather than from another
   terminal, and never by killing Node processes by name.
 - Do not use either watcher in CI or any other non-interactive context. `npm test`
   is the one-shot command, and it is what the CI workflow runs.
@@ -2321,8 +2352,8 @@ Extend that coverage as the application grows:
 npm run test:coverage
 
 # Re-run continuously while adding cases. Watch mode needs a Git or Mercurial
-# checkout and holds the terminal until you press Ctrl+C; see §7.3 for the
-# prerequisite and the --watchAll fallback.
+# checkout and holds the terminal until you press Ctrl+C; see §7.3 for what it
+# prints on a clean checkout, the prerequisite and the --watchAll fallback.
 npm run test:watch
 ```
 
