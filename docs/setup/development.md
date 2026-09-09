@@ -1,6 +1,6 @@
 # Local Development Setup Guide
 
-This comprehensive guide provides step-by-step instructions for setting up the Node.js tutorial application on your local machine for development and testing purposes. The setup process creates a robust development environment using Node.js v22.16.0 LTS and Express.js 5.2.1.
+This comprehensive guide provides step-by-step instructions for setting up the Node.js tutorial application on your local machine for development and testing purposes. The setup process creates a robust development environment using Node.js v22.16.0 LTS and Express.js 5.1.0.
 
 ## Table of Contents
 
@@ -23,7 +23,7 @@ Before you begin, ensure you have the following software installed on your syste
 
 #### Node.js (Required)
 - **Version**: Node.js v22.16.0 LTS or higher
-- **Minimum**: Node.js v18.0.0 (Express.js 5.2.1 requirement)
+- **Minimum**: Node.js v18.0.0 (Express.js 5.1.0 requirement)
 - **Justification**: Node.js v22, codename 'Jod', is the release line this project targets, builds against in CI and is tested on
 
 **Installation Verification:**
@@ -211,12 +211,12 @@ cd "$(git rev-parse --show-toplevel)/src/backend"
 Examine the `package.json` file to understand the dependencies that will be installed:
 
 **Core Dependencies (Production):**
-- `express: 5.2.1` - Web application framework (exact version pin)
+- `express: 5.1.0` - Web application framework (exact version pin)
 - `dotenv: ^16.3.1` - Environment variable management
 
 **Development Dependencies:**
 - `nodemon: ^3.0.0` - Automatic server restart during development
-- `supertest: 7.2.2` - HTTP testing library for integration tests
+- `supertest: 7.1.1` - HTTP testing library for integration tests
 - `jest: ^29.7.0` - Test runner for the unit and integration suites
 
 **Package.json Scripts:**
@@ -235,7 +235,7 @@ npm install
 ```
 
 **Installation Process Details:**
-- Downloads Express.js 5.2.1 and related packages
+- Downloads Express.js 5.1.0 and related packages
 - Creates `node_modules` directory with all dependencies
 - Installs the versions pinned by the committed `package-lock.json`, which is the authoritative dependency graph — npm writes a new lockfile only when none is present, and rewrites the committed one only when it no longer agrees with `package.json`
 - Installs approximately 50+ packages including transitive dependencies
@@ -263,10 +263,10 @@ npm audit
 ```
 nodejs-tutorial-app-backend@1.0.0
 ├── dotenv@16.6.1
-├── express@5.2.1
+├── express@5.1.0
 ├── jest@29.7.0
-├── nodemon@3.1.11
-└── supertest@7.2.2
+├── nodemon@3.1.14
+└── supertest@7.1.1
 ```
 
 ### 2.3 Dependency Security Audit
@@ -519,7 +519,7 @@ npm start
 [INFO]: 🚀 HTTP Server successfully started and listening on port 3000
 [INFO]: 🌐 Server is ready to accept HTTP requests
 [INFO]: 📍 Local development URL: http://localhost:3000
-[INFO]: ⚡ Node.js v22.16.0 | Express 5.2.1 | Environment: development
+[INFO]: ⚡ Node.js v22.16.0 | Express 5.1.0 | Environment: development
 [INFO]: 🎯 Tutorial application initialized successfully
 ```
 
@@ -1242,7 +1242,7 @@ What this guide deliberately does not do is grant `cap_net_bind_service` to the 
 
 #### Node.js Version Incompatibility
 
-**Problem**: Express.js 5.2.1 requires Node.js >= 18.0.0.
+**Problem**: Express.js 5.1.0 requires Node.js >= 18.0.0.
 
 **Diagnosis:**
 ```bash
@@ -2549,7 +2549,7 @@ Production security checklist:
 You have set up the development environment for the tutorial application and verified it end to end. This foundation provides:
 
 - **Node.js v22.16.0**: the runtime version this project targets and is tested against
-- **Express.js 5.2.1**: the exact pinned framework version, with Express 5's promise-aware routing and automatic propagation of errors thrown in async handlers
+- **Express.js 5.1.0**: the exact pinned framework version, with Express 5's promise-aware routing and automatic propagation of errors thrown in async handlers
 - **Development Tools**: automatic restart through Nodemon, Jest and Supertest suites behind a 90% coverage gate, and Node.js's built-in inspector and profilers
 - **Deployment material, unverified**: a multi-stage Dockerfile, a Compose file, Kubernetes manifests and a CD workflow are committed, but none is verified end to end — Docker Compose and the deployment pipeline have known defects. Treat sections 9 and 10 as a starting point for further work rather than as a production configuration.
 

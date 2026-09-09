@@ -4,7 +4,7 @@ This is the backend for the Node.js tutorial application, designed as an educati
 
 ## Overview
 
-The backend server is built on Node.js v22.16.0 LTS and Express.js 5.2.1. It implements a single-threaded event-driven architecture optimized for educational clarity while maintaining production-ready patterns.
+The backend server is built on Node.js v22.16.0 LTS and Express.js 5.1.0. It implements a single-threaded event-driven architecture optimized for educational clarity while maintaining production-ready patterns.
 
 ### Educational Objectives
 
@@ -18,7 +18,7 @@ The backend server is built on Node.js v22.16.0 LTS and Express.js 5.2.1. It imp
 
 - **Single `/hello` Endpoint**: Returns a simple "Hello world" message
 - **Event-Driven Architecture**: Leverages Node.js single-threaded event loop design
-- **Promise-Based Error Handling**: Modern error management using Express 5.2.1 features
+- **Promise-Based Error Handling**: Modern error management using Express 5.1.0 features
 - **Educational Structure**: Clear, maintainable code with extensive documentation
 - **Production Patterns**: Demonstrates scalable architecture principles
 
@@ -96,7 +96,7 @@ npm ci
 
 Either command installs the full tree — runtime and development dependencies together:
 
-- **Runtime**: express@5.2.1 (Web application framework, pinned to an exact version) and dotenv@^16.3.1 (Loads .env into process.env for `config/index.js`)
+- **Runtime**: express@5.1.0 (Web application framework, pinned to an exact version) and dotenv@^16.3.1 (Loads .env into process.env for `config/index.js`)
 - **Development**: jest, nodemon and supertest
 
 A production-only tree is a separate command, and it belongs in its own step rather than after the one above:
@@ -135,7 +135,7 @@ npm echoes the script it is about to run, `nodemon` prints its own preamble, and
 > nodejs-tutorial-app-backend@1.0.0 dev
 > nodemon server.js
 
-[nodemon] 3.1.11
+[nodemon] 3.1.14
 [nodemon] to restart at any time, enter `rs`
 [nodemon] watching path(s): **/*
 [nodemon] watching extensions: js,json
@@ -149,14 +149,14 @@ npm echoes the script it is about to run, `nodemon` prints its own preamble, and
 [INFO]: 🚀 HTTP Server successfully started and listening on port 3000
 [INFO]: 🌐 Server is ready to accept HTTP requests
 [INFO]: 📍 Local development URL: http://localhost:3000
-[INFO]: ⚡ Node.js v22.16.0 | Express 5.2.1 | Environment: development
+[INFO]: ⚡ Node.js v22.16.0 | Express 5.1.0 | Environment: development
 [INFO]: 🎯 Tutorial application initialized successfully
 ```
 
 That block is a capture from a default environment: no `.env` file on disk and none of the variables below set. Several of its values come from your environment rather than from the source, so yours may legitimately differ:
 
-- **`[nodemon] 3.1.11`** — the `nodemon` release actually installed. `npm ci` reproduces the version pinned in `package-lock.json`, which is where 3.1.11 comes from; `npm install` may resolve a newer 3.x, because the manifest declares the range `^3.0.0`.
-- **`Node.js v22.16.0`** — `process.version` for the runtime you launched, interpolated by `server.js`. The block shows the v22.16.0 LTS this document recommends; a different Node build prints its own version here. The `Express 5.2.1` on that same line is a literal in the log statement and does not vary.
+- **`[nodemon] 3.1.14`** — the `nodemon` release actually installed. `npm ci` reproduces the version pinned in `package-lock.json`, which is where 3.1.14 comes from; `npm install` may resolve a newer 3.x, because the manifest declares the range `^3.0.0`.
+- **`Node.js v22.16.0`** — `process.version` for the runtime you launched, interpolated by `server.js`. The block shows the v22.16.0 LTS this document recommends; a different Node build prints its own version here. The `Express 5.1.0` on that same line is a literal in the log statement and does not vary.
 - **`App Name`, `Host`, `Port` and `Environment`** — `config/index.js` reads `APP_NAME`, `HOST`, `PORT` and `NODE_ENV`, falling back to `node-tutorial-app`, `localhost`, `3000` and `development`. Setting any of them changes the matching summary line, and `PORT` also changes every other appearance of `3000` in the block.
 - **Whether the configuration summary appears at all** — `config/index.js` prints those six lines only when two conditions hold together: the environment is `development`, and `ENABLE_LOGGING` is not `false`. Set `ENABLE_LOGGING=false` and the summary disappears while the `[INFO]:` startup lines below it continue unchanged.
 
@@ -164,9 +164,8 @@ Each request served after startup adds one `HTTP Request` line, written by `midd
 
 **Development Mode Features:**
 - **Auto-reload**: Automatically restarts server on file changes
-- **Enhanced Logging**: Detailed request/response logging for debugging
+- **Enhanced Logging**: One `HTTP Request` record per request — method, path and serialised body, written by `middleware/requestLogger.js` — carrying the `[INFO]:` prefix that `utils/logger.js` adds in development. Responses are not logged
 - **Error Reporting**: Comprehensive error messages for development
-- **Performance Monitoring**: Basic timing and memory usage reporting
 
 ### Production Mode
 
@@ -191,7 +190,7 @@ NODE_ENV=production npm start
 🚀 HTTP Server successfully started and listening on port 3000
 🌐 Server is ready to accept HTTP requests
 📍 Local development URL: http://localhost:3000
-⚡ Node.js v22.16.0 | Express 5.2.1 | Environment: production
+⚡ Node.js v22.16.0 | Express 5.1.0 | Environment: production
 🎯 Tutorial application initialized successfully
 ```
 
@@ -209,7 +208,7 @@ Once started, the server listens at:
 - **Base URL**: `http://localhost:3000` — the root path itself is not routed and answers `404`
 - **Only Endpoint**: `http://localhost:3000/hello`
 
-`/hello` is the single route this application declares. It is also the availability signal used by the container health check (a bounded `node` `http.request` probe that issues a `HEAD` request) and by the Kubernetes probes, so no separate probe route exists or is needed.
+`/hello` is the single route this application declares. It is also the availability signal used by the container health check — `infrastructure/docker/Dockerfile` declares `HEALTHCHECK … CMD wget --no-verbose --tries=1 --spider http://localhost:${PORT}/hello`, and `wget --spider` issues a `GET` — and by the Kubernetes probes, so no separate probe route exists or is needed.
 
 Expected startup time: < 5 seconds for optimal performance.
 
@@ -319,8 +318,8 @@ src/backend/
 - **`routes/hello.js`**: Implementation of the `/hello` endpoint with proper error handling
 
 **Middleware Components:**
-- **`errorHandler.js`**: Centralized error handling using Express 5.2.1's enhanced promise support
-- **`requestLogger.js`**: HTTP request/response logging for monitoring and debugging
+- **`errorHandler.js`**: Centralized error handling using Express 5.1.0's enhanced promise support
+- **`requestLogger.js`**: HTTP request logging — method, path and serialised body, one record per request — for monitoring and debugging; it observes requests only and logs nothing about the response
 
 **Support Modules:**
 - **`config/index.js`**: Environment-based configuration management
@@ -332,12 +331,12 @@ src/backend/
 
 | Package | Version | Purpose | License |
 |---------|---------|---------|---------|
-| [express](https://www.npmjs.com/package/express) | 5.2.1 | Fast, unopinionated, minimalist web framework for Node.js | MIT |
+| [express](https://www.npmjs.com/package/express) | 5.1.0 | Fast, unopinionated, minimalist web framework for Node.js | MIT |
 | [dotenv](https://www.npmjs.com/package/dotenv) | ^16.3.1 | Loads variables from `.env` into `process.env`; required once by `config/index.js` | BSD-2-Clause |
 
-`express` is declared as an exact version rather than a caret range, so a fresh install resolves the same 5.2.1 that this document, the startup log line and the container image labels all name.
+`express` is declared as an exact version rather than a caret range, so a fresh install resolves the same 5.1.0 that this document, the startup log line and the container image labels all name.
 
-**Express.js 5.2.1 Key Features:**
+**Express.js 5.1.0 Key Features:**
 - **Promise Support**: Middleware can now return rejected promises, caught by the router as errors
 - **Enhanced Security**: Updated to path-to-regexp@8.x, removing sub-expression regex patterns for security reasons
 - **Node.js Compatibility**: Requires Node.js 18 or higher, optimized for v22 LTS
@@ -349,7 +348,7 @@ src/backend/
 |---------|---------|---------|---------|
 | [jest](https://www.npmjs.com/package/jest) | ^29.7.0 | Test runner and coverage reporter, configured by `jest.config.js` | MIT |
 | [nodemon](https://www.npmjs.com/package/nodemon) | ^3.0.0 | Auto-restart development server on file changes | MIT |
-| [supertest](https://www.npmjs.com/package/supertest) | 7.2.2 | Drives HTTP assertions against the Express app in-process | MIT |
+| [supertest](https://www.npmjs.com/package/supertest) | 7.1.1 | Drives HTTP assertions against the Express app in-process | MIT |
 
 `jest` is held on the 29.x line deliberately, and 29.7.0 is not the newest release available. The current major, `jest@30`, publishes an engine range that excludes Node 18.0–18.13, 19, 21 and 23 — every one of which this package's `engines.node` floor of `>=18.0.0` admits — whereas `jest@29.7.0`'s range contains that floor exactly. The 29.x line is the compatible choice, not the latest one.
 
@@ -421,10 +420,10 @@ The monitoring this application implements is one log record per request, writte
 
 | Metric | Target | Monitoring Method |
 |--------|--------|------------------|
-| Response Time | < 100ms | Built-in timing |
-| Memory Usage | < 50MB | Process monitoring |
-| Error Rate | < 0.1% | Error logging |
-| Uptime | > 99.9% | Health checks |
+| Response Time | < 100ms | Not measured by this application — time a request from the client instead |
+| Memory Usage | < 50MB | Not measured by this application |
+| Error Rate | < 0.1% | The error record `middleware/errorHandler.js` writes through `utils/logger.js` when a handler throws — `[ERROR]:`-prefixed in development |
+| Uptime | > 99.9% | Not measured by this application — the container health check and the Kubernetes probes poll `GET /hello`, and nothing here aggregates the result |
 
 ## Testing
 
@@ -501,8 +500,11 @@ npm audit
 # Fix automatically fixable vulnerabilities
 npm audit fix
 
-# Review security advisories
-npm audit --audit-level=moderate
+# Review the advisories exactly as CI does: .github/workflows/ci.yml runs the
+# audit step bare, applying no --audit-level, so an advisory at any severity -
+# low included - fails the job. Reviewing under a threshold locally would hide
+# findings that the pipeline still rejects.
+npm audit
 ```
 
 ### Future Security Enhancements
@@ -602,7 +604,7 @@ For production deployment, consider:
 
 **Containerization:**
 
-The repository ships its own image definition at `infrastructure/docker/Dockerfile`, and that tracked file is the one to build — there is no simplified variant to copy from here. It is a two-stage build on `node:22-alpine` that installs into `/usr/src/app`. The builder stage reads `package.json` and `package-lock.json` from `src/backend/` and installs the full tree with `npm ci --include=dev`. The runtime stage installs a production-only tree with `npm ci --omit=dev` and then takes the application sources from the filtered build context rather than from the builder, so the builder's development dependencies never reach the image. The container runs as a non-root user with UID 1001, declares a `HEALTHCHECK` that issues `HEAD /hello`, and starts with `CMD ["npm", "start"]`.
+The repository ships its own image definition at `infrastructure/docker/Dockerfile`, and that tracked file is the one to build — there is no simplified variant to copy from here. It is a two-stage build on `node:22-alpine` that installs into `/usr/src/app`. The builder stage reads `package.json` and `package-lock.json` from `src/backend/` and installs the full tree with `npm ci --include=dev`. The runtime stage installs a production-only tree with `npm ci --omit=dev` and then takes the application sources from the filtered build context rather than from the builder, so the builder's development dependencies never reach the image. The container runs as a non-root user with UID 1001, declares a `HEALTHCHECK` that probes `/hello` with `wget --spider` — which issues a `GET`, not a `HEAD` — and starts with `CMD ["npm", "start"]`.
 
 Build and run it from the repository root:
 
@@ -667,4 +669,4 @@ For questions, issues, or contributions:
 
 **License**: ISC, as declared by the `license` field in `src/backend/package.json`. This tutorial project is provided for educational purposes.
 
-**Last Updated**: December 2024 | **Node.js Version**: v22.16.0 LTS | **Express Version**: 5.2.1
+**Last Updated**: December 2024 | **Node.js Version**: v22.16.0 LTS | **Express Version**: 5.1.0

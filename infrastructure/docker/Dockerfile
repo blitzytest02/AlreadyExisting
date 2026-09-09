@@ -6,9 +6,7 @@
 # STAGE 1: Builder Stage
 # Purpose: Install all dependencies and prepare application for production
 # =============================================================================
-# The digest pins the exact base image bytes; the tag alone is mutable and can
-# resolve elsewhere later. Both stages must be updated to the same digest.
-FROM node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32 AS builder
+FROM node:22-alpine AS builder
 
 # Set build-time arguments for environment configuration
 ARG NODE_ENV=production
@@ -35,7 +33,7 @@ COPY src/backend/ ./
 # STAGE 2: Production Stage  
 # Purpose: Create lean, optimized production image with minimal attack surface
 # =============================================================================
-FROM node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32
+FROM node:22-alpine
 
 # Set build-time arguments that will be converted to environment variables
 ARG NODE_ENV=production
@@ -66,10 +64,8 @@ COPY src/backend/ ./
 # Create a non-root user for enhanced container security
 # This follows security best practices by avoiding running as root
 # Alpine Linux includes a 'node' user by default in the official Node.js images
-# -G assigns the group just created as the primary group; without it BusyBox
-# adduser -S leaves the account in the shared 'nogroup'
 RUN addgroup -g 1001 -S nodejs \
-    && adduser -S nodejs -u 1001 -G nodejs
+    && adduser -S nodejs -u 1001
 
 # Change ownership of application files to the non-root user
 RUN chown -R nodejs:nodejs /usr/src/app
@@ -96,7 +92,7 @@ CMD ["npm", "start"]
 # Dockerfile Metadata and Documentation
 # =============================================================================
 # Built for: Node.js v22.16.0 LTS tutorial application
-# Express.js: 5.2.1 with enhanced security and performance features
+# Express.js: 5.1.0 with enhanced security and performance features
 # Architecture: Multi-stage build for production optimization
 # Security: Non-root user execution, minimal attack surface
 # Performance: Alpine Linux base for minimal image size

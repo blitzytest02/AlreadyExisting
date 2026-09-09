@@ -11,7 +11,7 @@ This document provides comprehensive details for the `/hello` API endpoint. This
 - **Path:** `/hello`
 - **Method:** `GET`
 - **Description:** Responds with a static "Hello world" message to demonstrate basic HTTP server functionality and RESTful endpoint implementation.
-- **Framework:** Express.js v5.2.1 with Node.js v22.16.0 LTS
+- **Framework:** Express.js v5.1.0 with Node.js v22.16.0 LTS
 - **Purpose:** Educational demonstration of HTTP request-response patterns and Express routing fundamentals
 
 ---
@@ -147,7 +147,7 @@ The browser will display the plain text response "Hello world" directly on the p
 ## Technical Implementation
 
 ### Framework Details
-- **Express Version:** 5.2.1 (enhanced promise support)
+- **Express Version:** 5.1.0 (enhanced promise support)
 - **Node.js Version:** v22.16.0 LTS
 - **Routing Pattern:** Express Router with modular organization
 - **Response Method:** `res.send()` with automatic Content-Type detection

@@ -16,7 +16,7 @@ describe('/hello endpoint', () => {
      * F-002-RQ-002 (the exact "Hello world" text), F-002-RQ-003 (the GET
      * method) and F-004-RQ-003 (content delivered in the response body).
      *
-     * No latency assertion is made: supertest 7.2.2 leaves
+     * No latency assertion is made: supertest 7.1.1 leaves
      * response.duration undefined, so response time cannot be asserted from
      * the response object and F-002's target is measured out of band (see
      * the curl timing loop in docs/setup/development.md).

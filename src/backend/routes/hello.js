@@ -1,4 +1,4 @@
-// Express.js v5.2.1 - Pinned release with enhanced promise support and automatic error handling
+// Express.js v5.1.0 - Pinned release with enhanced promise support and automatic error handling
 const express = require('express');
 
 /**
@@ -21,10 +21,12 @@ const router = express.Router();
  * further methods from that single declaration: HEAD returns 200 with headers
  * only, as HTTP semantics require, and OPTIONS returns 200 with an
  * "Allow: GET, HEAD" header. POST, PUT and DELETE match no route and are
- * answered by Express's default handler with 404. The derived HEAD behaviour
- * is depended upon rather than incidental: the container health check probes
- * this path with a HEAD request (infrastructure/docker/Dockerfile), so HEAD
- * must not be suppressed.
+ * answered by Express's default handler with 404. The container health check
+ * probes this path with wget --spider (infrastructure/docker/Dockerfile), and
+ * BusyBox wget issues that probe as a GET, so it exercises the declared route
+ * rather than the derived HEAD. HEAD is nonetheless derived by Express from
+ * that single GET declaration, is required by HTTP semantics, and must not be
+ * suppressed.
  */
 router.get('/', (req, res) => {
     // Send the exact "Hello world" response as specified in F-002-RQ-002

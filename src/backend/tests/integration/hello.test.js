@@ -93,7 +93,7 @@ describe('Hello API Endpoint', () => {
      * Asserted here: status 200, a text/html Content-Type and a body of exactly
      * 'Hello world' - each once in the Supertest chain and once on the resolved
      * response. Not asserted: timing. F-002 sets a sub-100ms budget and the
-     * guard below names it, but supertest 7.2.2 leaves response.duration
+     * guard below names it, but supertest 7.1.1 leaves response.duration
      * undefined, so the guard's condition is false and the assertion inside it
      * never runs; latency is measured outside this suite by timing requests
      * against a running process. This case makes no security assertion.
@@ -123,7 +123,7 @@ describe('Hello API Endpoint', () => {
         
         expect(response.headers['content-type']).toMatch(/text\/html/);
         
-        // Inert timing guard, kept deliberately: supertest 7.2.2 never sets
+        // Inert timing guard, kept deliberately: supertest 7.1.1 never sets
         // response.duration, so the condition below is always false and the
         // assertion never executes. It records the intended budget, not a
         // measurement - nothing here evidences response time
@@ -169,7 +169,7 @@ describe('Hello API Endpoint', () => {
         // framework may change that page between releases
         
         // Inert timing guard again: response.duration is undefined under
-        // supertest 7.2.2, so the assertion below never executes
+        // supertest 7.1.1, so the assertion below never executes
         if (response.duration !== undefined) {
             expect(response.duration).toBeLessThan(50);
         }
@@ -196,6 +196,6 @@ describe('Hello API Endpoint', () => {
  *   it, independently of those two cases
  *
  * Each request runs against a server Supertest creates around the exported app.
- * Both timing guards are inert by design, because supertest 7.2.2 does not
+ * Both timing guards are inert by design, because supertest 7.1.1 does not
  * populate response.duration, so this file evidences no latency figure.
  */

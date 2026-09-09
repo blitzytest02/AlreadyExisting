@@ -1,4 +1,4 @@
-// Express.js v5.2.1 - Pinned release with enhanced promise support and automatic error handling
+// Express.js v5.1.0 - Pinned release with enhanced promise support and automatic error handling
 const express = require('express');
 
 const helloRouter = require('./hello.js');

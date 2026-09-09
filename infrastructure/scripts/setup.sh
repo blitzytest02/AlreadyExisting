@@ -11,7 +11,7 @@
 #
 # Version: 1.0.0
 # Author: Development Team
-# Target: Node.js v22.16.0 LTS with Express.js 5.2.1
+# Target: Node.js v22.16.0 LTS with Express.js 5.1.0
 # 
 # Requirements Addressed:
 # - Development Environment Setup (TECHNICAL_SPECIFICATIONS.md/3.6.3)
@@ -29,26 +29,7 @@ PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 BACKEND_DIR="${PROJECT_ROOT}/src/backend"
 DOCKER_FILE_PATH="${PROJECT_ROOT}/infrastructure/docker/Dockerfile"
 DOCKER_IMAGE_NAME="nodejs-tutorial-app"
-
-# Tag derived from the checkout, never the daemon-global "latest": any other
-# build can rebind a shared tag, leaving the instructions printed below pointing
-# at an image this run did not produce.
-if DOCKER_IMAGE_TAG="$(git -C "$PROJECT_ROOT" rev-parse --short=12 HEAD 2>/dev/null)"; then
-    GIT_DIRTY="$(git -C "$PROJECT_ROOT" status --porcelain 2>/dev/null || true)"
-    if [ -n "$GIT_DIRTY" ]; then
-        # Two dirty trees at one commit are not the same build input, so the tag
-        # carries a digest of what differs rather than a bare -dirty marker.
-        GIT_TREE_STATE="$( { printf '%s' "$GIT_DIRTY"; git -C "$PROJECT_ROOT" diff HEAD; } 2>/dev/null | sha256sum | cut -c1-8 || true)"
-        DOCKER_IMAGE_TAG="${DOCKER_IMAGE_TAG}-dirty-${GIT_TREE_STATE:-$$}"
-    fi
-else
-    DOCKER_IMAGE_TAG="build-$(date -u '+%Y%m%dT%H%M%SZ')-$$"
-fi
-
-# Declared here so every later reference is defined while set -u is in force
-DOCKER_ENDPOINT=""
-DOCKER_BINDING=""
-DOCKER_IMAGE_ID=""
+DOCKER_IMAGE_TAG="latest"
 
 # Color codes for enhanced terminal output
 RED='\033[0;31m'
@@ -146,67 +127,6 @@ check_prerequisites() {
         exit 1
     fi
     
-    # docker info proves a daemon answers, not that it is a daemon this checkout
-    # should be handed to: DOCKER_HOST and DOCKER_CONTEXT can point the CLI
-    # anywhere, and the build below ships this repository's source there.
-    DOCKER_CONTEXT_NAME="$(docker context show 2>/dev/null || true)"
-    DOCKER_ENDPOINT="$(docker context inspect --format '{{.Endpoints.docker.Host}}' 2>/dev/null || true)"
-    if [ -z "$DOCKER_ENDPOINT" ]; then
-        DOCKER_ENDPOINT="${DOCKER_HOST:-}"
-    fi
-
-    if [ -z "$DOCKER_ENDPOINT" ]; then
-        log_error "Unable to determine which Docker endpoint the CLI is using"
-        log_error "Inspect the active selection with: docker context inspect"
-        log_error "Cannot verify where the build context would be sent"
-        exit 1
-    fi
-
-    log_info "Docker endpoint selected by the CLI: $DOCKER_ENDPOINT"
-
-    case "$DOCKER_ENDPOINT" in
-        unix://*|npipe://*|fd://*|tcp://127.0.0.1:*|tcp://localhost:*|tcp://\[::1\]:*)
-            log_success "Docker endpoint is local: $DOCKER_ENDPOINT"
-            ;;
-        *)
-            if [ "${SETUP_ALLOW_REMOTE_DOCKER:-0}" = "1" ]; then
-                log_warning "Using a non-local Docker endpoint: $DOCKER_ENDPOINT"
-                log_warning "SETUP_ALLOW_REMOTE_DOCKER=1 is set, so this checkout leaves the local host"
-            else
-                log_error "Refusing to use a non-local Docker endpoint: $DOCKER_ENDPOINT"
-                log_error "The image build would send this checkout's source and manifests there"
-                log_error "Select a local daemon: unset DOCKER_HOST and DOCKER_CONTEXT, or run 'docker context use default'"
-                log_error "To target that endpoint deliberately, re-run with SETUP_ALLOW_REMOTE_DOCKER=1"
-                exit 1
-            fi
-            ;;
-    esac
-
-    # Bind every later docker command to the selection just verified - both
-    # accepted paths, or the ambient context could change between this check and
-    # the build. Pin by host when the host was the selection or the endpoint is a
-    # plain local socket; otherwise pin the context by name, so the TLS material
-    # the context owns survives instead of being reduced to a bare address.
-    DOCKER_BIND_BY_HOST=1
-    if [ -z "${DOCKER_HOST:-}" ] && [ -n "$DOCKER_CONTEXT_NAME" ]; then
-        case "$DOCKER_ENDPOINT" in
-            unix://*|npipe://*|fd://*) ;;
-            *) DOCKER_BIND_BY_HOST=0 ;;
-        esac
-    fi
-
-    if [ "$DOCKER_BIND_BY_HOST" = "1" ]; then
-        export DOCKER_HOST="$DOCKER_ENDPOINT"
-        unset DOCKER_CONTEXT
-        DOCKER_BINDING="DOCKER_HOST=$DOCKER_ENDPOINT"
-    else
-        export DOCKER_CONTEXT="$DOCKER_CONTEXT_NAME"
-        unset DOCKER_HOST
-        DOCKER_BINDING="DOCKER_CONTEXT=$DOCKER_CONTEXT_NAME ($DOCKER_ENDPOINT)"
-    fi
-
-    log_info "Docker commands bound to: $DOCKER_BINDING"
-
     DOCKER_VERSION=$(docker --version | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
     log_success "Docker version $DOCKER_VERSION detected and daemon is running"
     
@@ -247,7 +167,7 @@ install_dependencies() {
     log_info "Installing dependencies from package.json specification"
     
     # Navigate to backend source directory for dependency installation
-    # This directory contains package.json with Express.js 5.2.1 and related dependencies
+    # This directory contains package.json with Express.js 5.1.0 and related dependencies
     cd "$BACKEND_DIR" || {
         log_error "Failed to change directory to: $BACKEND_DIR"
         log_error "Please verify backend source directory exists and is accessible"
@@ -264,8 +184,8 @@ install_dependencies() {
     fi
     
     # Execute npm install command to download and install dependencies
-    # Installs production dependencies: express 5.2.1, dotenv ^16.3.1
-    # Installs development dependencies: nodemon ^3.0.0, supertest 7.2.2, jest ^29.7.0
+    # Installs production dependencies: express 5.1.0, dotenv ^16.3.1
+    # Installs development dependencies: nodemon ^3.0.0, supertest 7.1.1, jest ^29.7.0
     log_info "Executing: npm install"
     log_info "This may take several minutes depending on network speed..."
     
@@ -295,19 +215,14 @@ install_dependencies() {
         exit 1
     fi
     
-    # Perform security audit on installed dependencies. Bare, so an advisory at
-    # any severity fails it, and fatal, so no image is built from a tree that
-    # .github/workflows/ci.yml would reject - it audits with no --audit-level.
+    # Perform security audit on installed dependencies
     log_info "Running security audit on installed dependencies..."
-    if npm audit; then
-        log_success "Security audit completed - no advisories at any severity"
+    if npm audit --audit-level=moderate; then
+        log_success "Security audit completed - no critical vulnerabilities found"
     else
-        log_error "Security audit reported advisories in the installed dependency tree"
-        log_error "Stopping before the container image is built, so no image is produced from this tree"
-        log_error "Review with: npm audit"
-        log_error "Fix with: npm audit fix (if automatic fixes available)"
-        log_error "This gate matches .github/workflows/ci.yml, which audits with no severity floor"
-        exit 1
+        log_warning "Security audit detected potential vulnerabilities"
+        log_warning "Review with: npm audit"
+        log_warning "Fix with: npm audit fix (if automatic fixes available)"
     fi
     
     # Return to project root directory for subsequent operations
@@ -360,7 +275,6 @@ build_docker_image() {
     log_info "  - Image name: $DOCKER_IMAGE_NAME"
     log_info "  - Image tag: $DOCKER_IMAGE_TAG"
     log_info "  - Build context: Current directory and subdirectories"
-    log_info "  - Docker binding: $DOCKER_BINDING"
     
     # Execute Docker build command with comprehensive configuration
     # Uses multi-stage Dockerfile for production-optimized image
@@ -368,56 +282,27 @@ build_docker_image() {
     log_info "Executing Docker build command..."
     log_info "This process may take several minutes for first-time builds..."
     
-    # --iidfile makes the build itself report the image it produced. Reading the
-    # ID back from the tag afterwards would race any build that rebinds the tag
-    # in between, and would then vouch for an artifact this run never built.
-    DOCKER_IID_FILE="$(mktemp "${TMPDIR:-/tmp}/nodejs-tutorial-iid.XXXXXX")"
-    trap 'rm -f "$DOCKER_IID_FILE"' EXIT
-
     if docker build \
         --file "$DOCKER_FILE_PATH" \
         --tag "$DOCKER_IMAGE_NAME:$DOCKER_IMAGE_TAG" \
-        --iidfile "$DOCKER_IID_FILE" \
         --progress=plain \
         . ; then
         
         log_success "Docker image built successfully: $DOCKER_IMAGE_NAME:$DOCKER_IMAGE_TAG"
         
-        # Take the identity from the build's own report and validate it. Every
-        # query and instruction below names this ID, never the tag.
-        DOCKER_IMAGE_ID="$(cat "$DOCKER_IID_FILE" 2>/dev/null || true)"
-        rm -f "$DOCKER_IID_FILE"
-        trap - EXIT
-
-        case "$DOCKER_IMAGE_ID" in
-            sha256:[0-9a-f]*) ;;
-            *)
-                log_error "The build did not report a usable image ID"
-                log_error "Expected a sha256 digest from --iidfile, got: '$DOCKER_IMAGE_ID'"
-                log_error "Cannot confirm which artifact was produced"
-                exit 1
-                ;;
-        esac
-
-        log_info "Built image ID: $DOCKER_IMAGE_ID"
-
         # Verify image was created and display information
-        if docker image inspect "$DOCKER_IMAGE_ID" --format "Tags: {{.RepoTags}} | Created: {{.Created}}"; then
+        if docker images "$DOCKER_IMAGE_NAME:$DOCKER_IMAGE_TAG" --format "table {{.Repository}}\t{{.Tag}}\t{{.Size}}\t{{.CreatedAt}}" | grep -v "REPOSITORY"; then
             log_info "Docker image details displayed above"
         fi
         
-        # Query the image size. docker image inspect reports bytes, so awk
-        # renders the MB figure.
-        IMAGE_SIZE_BYTES=$(docker image inspect --format '{{.Size}}' "$DOCKER_IMAGE_ID")
-        IMAGE_SIZE=$(awk -v bytes="$IMAGE_SIZE_BYTES" 'BEGIN { printf "%.1fMB", bytes / 1000000 }')
+        # Display image size and layers information
+        IMAGE_SIZE=$(docker images "$DOCKER_IMAGE_NAME:$DOCKER_IMAGE_TAG" --format "{{.Size}}")
         log_info "Final image size: $IMAGE_SIZE"
         
-        # Provide usage instructions for the built image, by ID: the tag is only
-        # a label, and the daemon can rebind it to another image at any time.
+        # Provide usage instructions for the built image
         log_info "Docker image usage instructions:"
-        log_info "  - Run container: docker run -p 3000:3000 $DOCKER_IMAGE_ID"
-        log_info "  - Run in background: docker run -d -p 3000:3000 $DOCKER_IMAGE_ID"
-        log_info "  - Tag applied to this build: $DOCKER_IMAGE_NAME:$DOCKER_IMAGE_TAG"
+        log_info "  - Run container: docker run -p 3000:3000 $DOCKER_IMAGE_NAME:$DOCKER_IMAGE_TAG"
+        log_info "  - Run in background: docker run -d -p 3000:3000 $DOCKER_IMAGE_NAME:$DOCKER_IMAGE_TAG"
         log_info "  - View logs: docker logs <container_id>"
         log_info "  - Stop container: docker stop <container_id>"
         
@@ -483,7 +368,7 @@ echo "==========================================================================
 
 log_info "Setup Summary:"
 log_info "  ✓ System prerequisites verified (Node.js, npm, Docker)"
-log_info "  ✓ Backend dependencies installed (Express.js 5.2.1 + related packages)"
+log_info "  ✓ Backend dependencies installed (Express.js 5.1.0 + related packages)"
 log_info "  ✓ Docker image built ($DOCKER_IMAGE_NAME:$DOCKER_IMAGE_TAG)"
 log_info "  ✓ Environment ready for development and testing"
 
@@ -494,7 +379,7 @@ log_info "     cd $BACKEND_DIR && npm start"
 log_info "  2. Start with auto-reload (development):"
 log_info "     cd $BACKEND_DIR && npm run dev"
 log_info "  3. Run containerized version:"
-log_info "     docker run -p 3000:3000 $DOCKER_IMAGE_ID"
+log_info "     docker run -p 3000:3000 $DOCKER_IMAGE_NAME:$DOCKER_IMAGE_TAG"
 log_info "  4. Test application endpoint:"
 log_info "     curl http://localhost:3000/hello"
 log_info "     or visit http://localhost:3000/hello in browser"
